@@ -1,6 +1,6 @@
 name: "agentic-ai-cookbook-lab"
 slug: agentic-ai-cookbook-lab
-description: "Clone-and-run agent recipes with side-by-side framework comparisons. 3 flagship recipes × 4 framework implementations each, plus foundation explainers and SOTA RAG in core/. Default sandboxed runtime is HermesClaw."
+description: "SOTA research agents that verify their own answers. One opinionated implementation per task, portable across OpenAI/Ollama/vLLM/SGLang via OPENAI_BASE_URL. Self-hosted SearXNG + core/rag (hybrid BM25+dense+RRF+rerank+contextual) + adaptive-verification stack (HyDE, CoVe, iterative retrieval, step critic, FLARE, compression, classifier router). 2 flagship recipes (research-assistant shipped Wave 2 Tier 4; trading-copilot pending) + Rust MCP case study."
 status: active
 created: 2026-04-19
 tech_stack:
@@ -18,8 +18,8 @@ repository: "https://github.com/TheAiSingularity/agentic-ai-cookbook-lab"
 tags: [ai, agents, recipes, cookbook, tutorial, comparison, langgraph, crewai, rag, mcp]
 goals:
   - id: G1
-    title: "3 flagship recipes × 4 framework implementations each, shipped and runnable"
-    success_criteria: "research-assistant, youtube-analyzer, trading-copilot all ship 4 framework variants that make run in ≤60s from fresh clone"
+    title: "2 flagship SOTA recipes shipped (research-assistant, trading-copilot) + Rust MCP case study"
+    success_criteria: "research-assistant ships beginner + production tiers (Tiers 1/2/4) with eval harness; trading-copilot ships beginner tier; rust-mcp-search-tool builds end-to-end. All make run in ≤90s from fresh clone."
     status: in_progress
   - id: G2
     title: "core/rag SOTA retrieval library, used by every recipe that does retrieval"

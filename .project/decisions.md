@@ -1,5 +1,11 @@
 # Decisions
 
+## DEC-008 — Drop youtube-analyzer; focus on research-assistant + trading-copilot
+**Date:** 2026-04-20
+**Context:** Three recipes were scoped in Wave 1 (research-assistant, youtube-analyzer, trading-copilot). After Wave 2's deep investment in research-assistant — four tiers of techniques, 68 unit tests, 12-config ablation matrix, full paper draft — youtube-analyzer never got any implementation and added scope confusion. The trading-copilot story (market research + alerts, not execution) is differentiated and has a natural place for the adaptive-verification stack; youtube-analyzer overlapped too much with generic "summarize long video" tooling.
+**Decision:** Delete `recipes/by-use-case/youtube-analyzer/`. Keep two flagship recipes: research-assistant (shipped through Tier 4) and trading-copilot (pending). Rewrite root README and recipes/README.md to reflect current scope accurately.
+**Consequences:** README was significantly stale ("Wave 0" status badge, mentioned `web_search` tool even though we pivoted to SearXNG + OPENAI_BASE_URL portability months ago). Rewrite fixes that. G1 goal in project.yaml trimmed to 2 recipes. No code touched beyond youtube-analyzer/ deletion and README surfaces.
+
 ## DEC-007 — Wave 2: SOTA enhancement track + research paper
 **Date:** 2026-04-20
 **Context:** The research-assistant recipe works end-to-end locally and on cloud, but isn't SOTA. User wants to push to world-class on speed+accuracy+compute axes and publish. Reference target: MiroThinker-H1 at 88.2 BrowseComp (surpasses Gemini-3.1-Pro and Claude-4.6-Opus). User's rig: 4× RTX 6000 Pro Blackwell, fully self-hosted.

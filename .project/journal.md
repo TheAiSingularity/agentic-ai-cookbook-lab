@@ -1,5 +1,12 @@
 # Progress Journal
 
+## 2026-04-20 (cleanup) — Drop youtube-analyzer; refresh stale READMEs
+
+- Deleted `recipes/by-use-case/youtube-analyzer/` entirely. Scope settles on **two** flagship recipes: research-assistant (shipped through Tier 4) + trading-copilot (pending). See DEC-008.
+- Rewrote **root README** — was stale ("Wave 0" badge, old `web_search` tool claims from before the SearXNG/OPENAI_BASE_URL pivot, no mention of Tier 2/4 architecture, no mention of how-it-works doc). Now accurately reflects Wave 2 Tier 4 state with the three backend paths (Mac/Ollama, GPU VM/vLLM|SGLang, OpenAI), 68/68 test badge, 12-config ablation, portable-stack story.
+- Rewrote **recipes/README.md** — stack tables updated to show per-backend model mappings (OpenAI / Ollama / vLLM tier), 2 recipes listed honestly (research-assistant live, trading-copilot skeleton), Rust recipe called out as a case study.
+- **project.yaml** G1 trimmed: 3 recipes × 4 framework variants → 2 SOTA recipes + Rust case study. Description updated.
+
 ## 2026-04-20 (late night) — Wave 2 Tier 4 shipped
 
 - **Production tier extended** with five additional 2026-SOTA techniques, each env-gated for ablation:
