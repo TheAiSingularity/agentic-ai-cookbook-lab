@@ -7,23 +7,46 @@ teachability; ship `production/` when quality matters.
 
 ## What's added on top of beginner
 
-| Node / technique | Effect | When it runs | Gated by |
-|---|---|---|---|
-| **HyDE** in `_plan` | Generates a hypothetical answer per sub-query; uses its embedding for retrieval | Every plan pass | `ENABLE_HYDE=1` (default); auto-skipped on numeric/factoid queries |
-| **CoVe** in `_verify` | Extracts standalone claims from the answer; verifies each against evidence independently; flags unsupported claims | After synthesize | `ENABLE_VERIFY=1` (default) |
-| **Iterative retrieval** (ITER-RETGEN) | Re-searches *for failed claims only* and regenerates | When verify flags unverified claims | Bounded by `MAX_ITERATIONS` (default 2) |
-| **Self-consistency** in `_synthesize` | Samples N candidates; picks the one with the best citation-grounding score | Every synthesize | `ENABLE_CONSISTENCY=1` (opt-in; costs N× synthesize) |
+### Tier 2 (adaptive verification)
 
-### Pipeline
+| Node / technique | Effect | Gated by |
+|---|---|---|
+| **HyDE** in `_plan` | Hypothetical-answer embedding for retrieval | `ENABLE_HYDE=1`; auto-skipped on numeric/factoid |
+| **CoVe** in `_verify` | Claim-by-claim verification vs evidence | `ENABLE_VERIFY=1` |
+| **Iterative retrieval** | Re-search unverified claims, regenerate | `MAX_ITERATIONS` (default 2) |
+| **Self-consistency** | Sample N candidates, pick best by grounding | `ENABLE_CONSISTENCY` (opt-in) |
+
+### Tier 4 (2026 SOTA techniques layered on top)
+
+| Node / technique | Effect | Gated by |
+|---|---|---|
+| **T4.3 · Classifier router** (`_classify`) | Classifies question into `factoid / multihop / synthesis`; downstream nodes adapt compute | `ENABLE_ROUTER=1` |
+| **T4.1 · Step-level critic** (`_critic`) | ThinkPRM-style judge after each major step; rejects bad plans/search/etc. | `ENABLE_STEP_VERIFY=1` |
+| **T4.4 · Evidence compression** (`_compress`) | LLM-distills evidence 2-3× before synthesize (LongLLMLingua-lite) | `ENABLE_COMPRESS=1` |
+| **T4.2 · FLARE active retrieval** (`_flare_augment`) | Detects hedged claims, re-searches for that exact claim, regenerates | `ENABLE_ACTIVE_RETR=1` |
+| **T4.5 · Plan refinement** | One-shot replan when the critic rejects the decomposition | `ENABLE_PLAN_REFINE=0` (opt-in, has loop risk) |
+
+### Pipeline (with Tier 4)
 
 ```
-plan (+HyDE) → search → retrieve → synthesize → verify (CoVe)
-      │                                              │
-      │                         verified ──yes──▶ END
-      │                                              │
-      │                                              no
-      └── iterate (re-search failed claims, bounded) ┘
+classify → plan (+HyDE, +critic) → search (+critic) → retrieve → compress
+                                                                    │
+                                                                    ▼
+                                                          synthesize (+FLARE)
+                                                                    │
+                                                                    ▼
+                                                            verify (CoVe)
+                                                                    │
+                                                verified ──yes──▶ END
+                                                                    │
+                                                                    no
+                                                                    │
+                                              iterate (re-search failed claims) ─▶ search
 ```
+
+Compute scales with question difficulty: factoid questions exit the
+classifier with shallower budgets; multihop/synthesis get the full
+stack. See `eval/ablation.py` for the 12-config ablation matrix.
 
 Easy questions exit in one pass (~same latency as beginner). Hard
 questions get 2–3 extra LLM calls (verify + regenerate) and occasionally
@@ -44,12 +67,19 @@ export MODEL_VERIFIER=gemma4:e2b       # CoVe — cheap model is fine
 export EMBED_MODEL=nomic-embed-text
 export SEARXNG_URL=http://localhost:8888
 
-# Toggles (defaults shown)
+# Tier 2 toggles (defaults shown)
 export ENABLE_HYDE=1
 export ENABLE_VERIFY=1
 export MAX_ITERATIONS=2
 export ENABLE_CONSISTENCY=0
 export CONSISTENCY_SAMPLES=3
+
+# Tier 4 toggles (defaults shown — all on except plan refine)
+export ENABLE_ROUTER=1          # T4.3 question classifier → adaptive compute
+export ENABLE_STEP_VERIFY=1     # T4.1 step-level critic (ThinkPRM pattern)
+export ENABLE_ACTIVE_RETR=1     # T4.2 FLARE re-search on hedged claims
+export ENABLE_COMPRESS=1        # T4.4 evidence compression before synthesize
+export ENABLE_PLAN_REFINE=0     # T4.5 replan when critic rejects (opt-in)
 
 make install
 make run Q="your hard multi-hop research question"

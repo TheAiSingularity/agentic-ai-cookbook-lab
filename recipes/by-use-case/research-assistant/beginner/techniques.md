@@ -108,19 +108,25 @@ wasted on duplicates. Pure post-processing, zero LLM cost.
 
 ## Going further — production tier
 
-The beginner tier stops at one-shot synthesis. For multi-hop questions
-where a single pass fabricates or under-supports claims, see the
-[production tier](../production/README.md) which adds:
+The beginner tier stops at one-shot synthesis. The [production
+tier](../production/README.md) adds two stacked layers:
 
+**Tier 2 — adaptive verification:**
 - **HyDE** query rewriting (gated against numeric queries)
-- **Chain-of-Verification** — claim-by-claim verification against evidence
-- **Iterative retrieval** — re-search for unverified claims only
-- **Self-consistency voting** (opt-in) — sample N synthesis candidates,
-  pick the best by citation grounding
+- **Chain-of-Verification** — claim-by-claim vs evidence
+- **Iterative retrieval** — re-search unverified claims
+- **Self-consistency voting** (opt-in)
 
-These are the MiroThinker-H1 architectural wins (88.2 BrowseComp vs
-74.0 for single-pass MiroThinker-1.7) applied on top of any
-OpenAI-compatible backend.
+**Tier 4 — 2026 SOTA layered on top:**
+- **T4.1 step-level critic** — ThinkPRM-style judgment after each node
+- **T4.2 FLARE active retrieval** — re-search mid-synthesis when a claim is hedged (+62% on multi-hop 2Wiki in literature)
+- **T4.3 classifier router** — compute scales with question difficulty
+- **T4.4 evidence compression** — LongLLMLingua-style, +17-21% accuracy with 4× fewer tokens
+- **T4.5 plan refinement** — replan when critic rejects decomposition (opt-in)
+
+Target: close the gap to MiroThinker-H1 (88.2 BrowseComp) using
+commodity open-weight LLMs without any model-specific training. See
+`eval/ablation.py` for the 12-config ablation matrix.
 
 ## What nobody tells you
 

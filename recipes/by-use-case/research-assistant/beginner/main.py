@@ -14,7 +14,7 @@ from typing import TypedDict
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))  # let core.rag resolve
 
 import requests  # noqa: E402
-from core.rag import HybridRetriever  # noqa: E402
+from core.rag import HybridRetriever, Retriever  # noqa: E402
 from langgraph.graph import END, StateGraph  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
@@ -66,11 +66,11 @@ def _search(state: State) -> dict:
 
 
 def _retrieve(state: State) -> dict:
-    """Use core/rag v1 hybrid (BM25 + dense + RRF) to pick top-k evidence."""
+    """Retrieve top-k evidence via core/rag — RAG_VERSION=v0 (cosine) or v1 (hybrid, default)."""
     ev = state["evidence"]
     if len(ev) <= TOP_K_EVIDENCE:
         return {"evidence": ev}
-    r = HybridRetriever()
+    r = Retriever() if ENV("RAG_VERSION", "v1") == "v0" else HybridRetriever()
     r.add([e["text"] for e in ev])
     top = r.retrieve(state["question"], k=TOP_K_EVIDENCE)
     by_text = {e["text"]: e for e in ev}

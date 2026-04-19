@@ -35,9 +35,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parents[4]
+# eval/ → research-assistant/ → by-use-case/ → recipes/ → REPO_ROOT
+REPO_ROOT = HERE.parents[3]
 BEGINNER = REPO_ROOT / "recipes/by-use-case/research-assistant/beginner/main.py"
 PRODUCTION = REPO_ROOT / "recipes/by-use-case/research-assistant/production/main.py"
+assert BEGINNER.exists() and PRODUCTION.exists(), f"main.py not found; REPO_ROOT={REPO_ROOT}"
 
 
 @dataclass
@@ -50,19 +52,52 @@ class Config:
     env: dict[str, str] = field(default_factory=dict)
 
 
-# Default ablation matrix: 7 configs spanning Tier 1 + Tier 2.
+# Default ablation matrix: 12 configs spanning Tiers 1, 2, and 4.
+# Tier 4 defaults are all OFF here so B-configs show the pre-T4 baseline;
+# C-configs layer each T4 technique in, one at a time, ending at "all on".
+_T4_OFF = {
+    "ENABLE_ROUTER": "0", "ENABLE_STEP_VERIFY": "0",
+    "ENABLE_ACTIVE_RETR": "0", "ENABLE_COMPRESS": "0", "ENABLE_PLAN_REFINE": "0",
+}
+
 CONFIGS: dict[str, Config] = {
+    # Tier 1 — retrieval only
     "A1": Config("A1", "Beginner + v0 RAG (naive cosine)", BEGINNER, {"RAG_VERSION": "v0"}),
     "A2": Config("A2", "Beginner + v1 RAG (hybrid BM25+dense+RRF)", BEGINNER, {"RAG_VERSION": "v1"}),
     "A3": Config("A3", "Beginner + v1 + contextual chunking", BEGINNER, {"RAG_VERSION": "v1", "ENABLE_CONTEXTUAL": "1"}),
+
+    # Tier 2 — adaptive verification (Tier 4 gated off so effect is isolated)
     "B1": Config("B1", "Production, verify only (CoVe)", PRODUCTION,
-                 {"ENABLE_HYDE": "0", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "0"}),
+                 {**_T4_OFF, "ENABLE_HYDE": "0", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "0"}),
     "B2": Config("B2", "Production, HyDE + verify", PRODUCTION,
-                 {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "0"}),
+                 {**_T4_OFF, "ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "0"}),
     "B3": Config("B3", "Production, HyDE + verify + iterate (×1)", PRODUCTION,
-                 {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1"}),
-    "B4": Config("B4", "Production, all techniques + self-consistency N=3", PRODUCTION,
+                 {**_T4_OFF, "ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1"}),
+    "B4": Config("B4", "Production, Tier 2 full + self-consistency N=3", PRODUCTION,
+                 {**_T4_OFF, "ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1",
+                  "ENABLE_CONSISTENCY": "1", "CONSISTENCY_SAMPLES": "3"}),
+
+    # Tier 4 — each technique layered onto B3
+    "C1": Config("C1", "B3 + T4.1 step critic", PRODUCTION,
                  {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1",
+                  "ENABLE_STEP_VERIFY": "1", "ENABLE_ROUTER": "0", "ENABLE_ACTIVE_RETR": "0",
+                  "ENABLE_COMPRESS": "0", "ENABLE_PLAN_REFINE": "0"}),
+    "C2": Config("C2", "C1 + T4.2 FLARE active retrieval", PRODUCTION,
+                 {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1",
+                  "ENABLE_STEP_VERIFY": "1", "ENABLE_ACTIVE_RETR": "1", "ENABLE_ROUTER": "0",
+                  "ENABLE_COMPRESS": "0", "ENABLE_PLAN_REFINE": "0"}),
+    "C3": Config("C3", "C2 + T4.4 evidence compression", PRODUCTION,
+                 {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1",
+                  "ENABLE_STEP_VERIFY": "1", "ENABLE_ACTIVE_RETR": "1", "ENABLE_COMPRESS": "1",
+                  "ENABLE_ROUTER": "0", "ENABLE_PLAN_REFINE": "0"}),
+    "C4": Config("C4", "C3 + T4.3 adaptive router", PRODUCTION,
+                 {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1",
+                  "ENABLE_STEP_VERIFY": "1", "ENABLE_ACTIVE_RETR": "1", "ENABLE_COMPRESS": "1",
+                  "ENABLE_ROUTER": "1", "ENABLE_PLAN_REFINE": "0"}),
+    "C5": Config("C5", "C4 + T4.5 plan refinement + self-consistency (full stack)", PRODUCTION,
+                 {"ENABLE_HYDE": "1", "ENABLE_VERIFY": "1", "MAX_ITERATIONS": "1",
+                  "ENABLE_STEP_VERIFY": "1", "ENABLE_ACTIVE_RETR": "1", "ENABLE_COMPRESS": "1",
+                  "ENABLE_ROUTER": "1", "ENABLE_PLAN_REFINE": "1",
                   "ENABLE_CONSISTENCY": "1", "CONSISTENCY_SAMPLES": "3"}),
 }
 

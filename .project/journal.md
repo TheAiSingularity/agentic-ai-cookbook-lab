@@ -1,5 +1,20 @@
 # Progress Journal
 
+## 2026-04-20 (late night) — Wave 2 Tier 4 shipped
+
+- **Production tier extended** with five additional 2026-SOTA techniques, each env-gated for ablation:
+  - **T4.1 step-level critic** (ThinkPRM-style) — `_critic(step, payload, ctx)` judges every major node output (plan, search) with `VERDICT: accept|redo + FEEDBACK`. Fail-open on parse error.
+  - **T4.2 FLARE active retrieval** (`_flare_augment`) — detects hedging via `_HEDGE_RE`, triggers a targeted `_search_one` on the exact hedged claim, regenerates once.
+  - **T4.3 question classifier router** (`_classify`) — cheap LLM call routes question into `factoid | multihop | synthesis`; planner adapts `NUM_SUBQUERIES` and HyDE off for factoid.
+  - **T4.4 evidence compression** (`_compress`) — LLM-distills each evidence chunk to 2–3 sentences focused on the question, URLs preserved for citations. Portable alternative to LongLLMLingua.
+  - **T4.5 plan refinement** (opt-in via `ENABLE_PLAN_REFINE=1`) — on critic reject, regenerate decomposition once with tightening instruction; bounded by `plan_rejects` to prevent loops.
+- **New graph:** `classify → plan → search → retrieve → compress → synthesize → verify → [iterate or END]`. Critic wires at plan and search; FLARE wires into synthesize.
+- **State** extended: `question_class`, `evidence_compressed`, `plan_rejects`.
+- **26 tests** (up from 12) for production tier covering all Tier 4 nodes + gating. **Full suite: 68/68 green.**
+- **Ablation matrix extended** in `eval/ablation.py` from 7 → **12 configs** (C1–C5 layer each Tier 4 technique onto B3, ending at C5 = full stack + self-consistency).
+- **Docs updated:** production README (pipeline diagram + env vars table), beginner techniques.md (Tier 4 pointer), paper-draft.md (§3.2 component list + §4.1 ablation matrix).
+- **Research justification:** see Round 2 research note for Tier 4. Expected gain: +5-25 points on BrowseComp-Plus vs Tier 2 baseline on a commodity model. Target: close gap to MiroThinker-H1 (88.2) without model training.
+
 ## 2026-04-20 (night) — Wave 2 Tier 3 shipped
 
 - **Benchmark infrastructure** ready end-to-end: `eval/ablation.py` (7-config matrix runner with resumable JSONL output), `eval/pareto.py` (aggregate table + Pareto scatter via matplotlib), `eval/Makefile` (ablate / pareto / clean targets). 7 new unit tests added; **54/54 green**.

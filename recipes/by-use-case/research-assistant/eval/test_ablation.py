@@ -20,7 +20,7 @@ from pareto import aggregate
 def test_configs_have_required_labels():
     """Every default config has a unique label, description, and main script."""
     labels = {c.label for c in CONFIGS.values()}
-    assert labels == {"A1", "A2", "A3", "B1", "B2", "B3", "B4"}
+    assert labels == {"A1", "A2", "A3", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4", "C5"}
     for label, cfg in CONFIGS.items():
         assert cfg.label == label
         assert cfg.description
