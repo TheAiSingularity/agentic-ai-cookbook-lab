@@ -10,17 +10,17 @@ narrows evidence with `core/rag`, and synthesizes a cited answer.
 
 ```
 plan ──▶ search ──▶ retrieve ──▶ synthesize
-(Gemini) (Exa)      (core/rag)   (GPT-5.4 mini)
+(Gemini) (Exa)      (core/rag)   (GPT-5 mini)
 ```
 
 ## Stack
 
 | Step | Tool | Why |
 |---|---|---|
-| plan | Gemini 3.1 Flash-Lite | Cheap, 1M ctx — sub-query generation doesn't need reasoning muscle |
+| plan | Gemini 2.5 Flash | Cheap, 1M ctx — sub-query generation doesn't need reasoning muscle |
 | search | Exa `search_and_contents` with highlights | Query-dependent highlights send 50–75% fewer tokens to the LLM |
 | retrieve | `core/rag` v0 (cosine) | Narrows many highlights to top-k most relevant |
-| synthesize | GPT-5.4 mini | Highest 2026 agentic-task accuracy where it matters most — the final answer |
+| synthesize | GPT-5 mini | Highest 2026 agentic-task accuracy where it matters most — the final answer |
 
 See [`techniques.md`](techniques.md) for primary-source citations.
 
@@ -30,7 +30,7 @@ See [`techniques.md`](techniques.md) for primary-source citations.
 # Prerequisites
 export EXA_API_KEY=...
 export GOOGLE_API_KEY=...    # Gemini
-export OPENAI_API_KEY=...    # GPT-5.4 mini + embeddings (for core/rag)
+export OPENAI_API_KEY=...    # GPT-5 mini + embeddings (for core/rag)
 
 # Install and run
 make install

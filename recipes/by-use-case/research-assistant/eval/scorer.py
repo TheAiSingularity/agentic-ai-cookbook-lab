@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "beginner"))
 from main import build_graph  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
-JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-5.4-mini")
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-5-mini")
 URL_RE = re.compile(r"https?://[^\s)]+")
 
 

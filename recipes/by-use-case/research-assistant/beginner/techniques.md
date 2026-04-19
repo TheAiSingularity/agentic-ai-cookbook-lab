@@ -49,19 +49,30 @@ time reduces retrieval failures by up to 67%.
 - [Benchmarking retrieval for financial docs (arXiv)](https://arxiv.org/html/2604.01733)
 - [Advanced RAG patterns 2026 (dev.to)](https://dev.to/young_gao/rag-is-not-dead-advanced-retrieval-patterns-that-actually-work-in-2026-2gbo)
 
-## LLM routing: Gemini 3.1 Flash-Lite default, GPT-5.4 mini for synthesis
+## LLM routing: Gemini 2.5 Flash default, GPT-5 mini for synthesis
 
-**Why routing:** Sending simple tasks to Haiku-class models and harder ones
-to more capable models reduces cost 50–80% while maintaining quality.
+**Why routing:** Sending simple tasks to a cheap fast model and harder
+ones to a more capable model reduces cost 50–80% while maintaining
+quality. The planner just needs to list sub-queries; the synthesizer
+needs to reason over evidence and produce correct citations — so that's
+where we pay for the better model.
 
-**Why Gemini 3.1 Flash-Lite as default:** $0.25 / $1.50 per M tokens,
-1M context, 363 tok/s throughput. Independent analysis rates it the
-strongest cheap-tier model for high-volume workloads in early 2026.
+**Why Gemini 2.5 Flash as default planner:** large context window, strong
+cost/throughput, well-suited for short structured outputs like sub-query
+lists. Swap via `MODEL_PLANNER` env var if a newer generation exists on
+your account (e.g., Flash-Lite tiers when available).
 
-**Why GPT-5.4 mini for synthesis:** Highest agentic-task accuracy in the
-budget tier. OSWorld-Verified 72.2, comfortably beating Claude Haiku 4.5
-(57) and Gemini 3 Flash (53). Used only on the final synthesis step —
-where reasoning quality matters most and token volume is smallest.
+**Why GPT-5 mini for synthesis:** leading budget-tier OSWorld-Verified
+scores compared to other cheap-tier models, and the real-cost bottleneck
+for research-assistant is on the planner (fan-out), not synthesis (one
+call). Swap via `MODEL_SYNTHESIZER` if you want a cheaper/nano or
+heavier/pro tier.
+
+**Note on model names:** benchmark articles cited below sometimes
+reference forecast or unreleased model tiers (e.g., "GPT-5.4 mini",
+"Gemini 3.1 Flash-Lite"). The recipe uses the names that exist on a
+standard OpenAI / Google account today, and defers to env-var overrides
+when a newer tier ships.
 
 - [Artificial Analysis model leaderboard](https://artificialanalysis.ai/leaderboards/models)
 - [LM Council Apr 2026 benchmarks](https://lmcouncil.ai/benchmarks)

@@ -10,9 +10,9 @@ Two indexes:
 
 | Recipe | Framework | LLM | Key components | Cost per run |
 |---|---|---|---|---|
-| [research-assistant/](by-use-case/research-assistant/) | LangGraph | Gemini 3.1 Flash-Lite | Exa search · `core/rag/` (contextual + hybrid + rerank) | $0.01–$0.03 |
-| [youtube-analyzer/](by-use-case/youtube-analyzer/) | Pydantic AI | Gemini 3.1 Flash-Lite (1M ctx) | yt-dlp · Groq Whisper Large v3 Turbo fallback | $0.001–$0.02 |
-| [trading-copilot/](by-use-case/trading-copilot/) | LangGraph | Flash-Lite + GPT-5.4 mini (routing) | yfinance · RSS news · Slack/Telegram alerts | $0.005–$0.02 |
+| [research-assistant/](by-use-case/research-assistant/) | LangGraph | Gemini 2.5 Flash | Exa search · `core/rag/` (contextual + hybrid + rerank) | $0.01–$0.03 |
+| [youtube-analyzer/](by-use-case/youtube-analyzer/) | Pydantic AI | Gemini 2.5 Flash (1M ctx) | yt-dlp · Groq Whisper Large v3 Turbo fallback | $0.001–$0.02 |
+| [trading-copilot/](by-use-case/trading-copilot/) | LangGraph | Flash-Lite + GPT-5 mini (routing) | yfinance · RSS news · Slack/Telegram alerts | $0.005–$0.02 |
 
 Every stack choice is backed by April 2026 benchmarks and pricing — see each recipe's `techniques.md` for citations.
 

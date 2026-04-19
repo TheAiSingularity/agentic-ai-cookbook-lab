@@ -1,8 +1,9 @@
-"""Research assistant — SOTA agentic recipe (April 2026).
+"""Research assistant — SOTA agentic recipe.
 
 LangGraph pipeline: plan → search → retrieve → synthesize.
-Stack: Gemini 3.1 Flash-Lite (plan) · Exa highlights (search) · core/rag
-(retrieve) · GPT-5.4 mini (synthesize). ~$0.01–$0.03 per query.
+Stack: Gemini 2.5 Flash (plan) · Exa highlights (search) · core/rag
+(retrieve) · GPT-5 mini (synthesize). ~$0.01–$0.03 per query.
+Override model names via MODEL_PLANNER / MODEL_SYNTHESIZER env vars.
 See techniques.md for the SOTA choices with primary-source citations.
 """
 
@@ -21,8 +22,8 @@ from google import genai  # noqa: E402
 from langgraph.graph import END, StateGraph  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
-MODEL_PLANNER = os.getenv("MODEL_PLANNER", "gemini-3.1-flash-lite")
-MODEL_SYNTHESIZER = os.getenv("MODEL_SYNTHESIZER", "gpt-5.4-mini")
+MODEL_PLANNER = os.getenv("MODEL_PLANNER", "gemini-2.5-flash")
+MODEL_SYNTHESIZER = os.getenv("MODEL_SYNTHESIZER", "gpt-5-mini")
 SEARCH_RESULTS_PER_QUERY = int(os.getenv("SEARCH_RESULTS_PER_QUERY", "3"))
 TOP_K_HIGHLIGHTS = int(os.getenv("TOP_K_HIGHLIGHTS", "8"))
 

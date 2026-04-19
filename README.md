@@ -24,9 +24,9 @@ The default sandboxed runtime for production-tier recipes is [HermesClaw](https:
 
 | Recipe | What it does | SOTA stack | Cost per run |
 |---|---|---|---|
-| [research-assistant](recipes/by-use-case/research-assistant/) | Answers research questions with web search + RAG + synthesis, fully cited | LangGraph · Exa · `core/rag/` (contextual + hybrid + rerank) · Gemini 3.1 Flash-Lite | $0.01–$0.03 |
-| [youtube-analyzer](recipes/by-use-case/youtube-analyzer/) | Transcript → chapters → summary → titles, with typed schemas | Pydantic AI · yt-dlp (+ Groq Whisper fallback) · Gemini 3.1 Flash-Lite (1M context) | $0.001–$0.02 |
-| [trading-copilot](recipes/by-use-case/trading-copilot/) | Market research + alerts (NOT auto-execution) | LangGraph · yfinance + RSS · Flash-Lite → GPT-5.4 mini routing for skeptic critique | $0.005–$0.02 |
+| [research-assistant](recipes/by-use-case/research-assistant/) | Answers research questions with web search + RAG + synthesis, fully cited | LangGraph · Exa · `core/rag/` (contextual + hybrid + rerank) · Gemini 2.5 Flash | $0.01–$0.03 |
+| [youtube-analyzer](recipes/by-use-case/youtube-analyzer/) | Transcript → chapters → summary → titles, with typed schemas | Pydantic AI · yt-dlp (+ Groq Whisper fallback) · Gemini 2.5 Flash (1M context) | $0.001–$0.02 |
+| [trading-copilot](recipes/by-use-case/trading-copilot/) | Market research + alerts (NOT auto-execution) | LangGraph · yfinance + RSS · Flash-Lite → GPT-5 mini routing for skeptic critique | $0.005–$0.02 |
 
 ## Repo layout
 

@@ -14,7 +14,7 @@ Given a watchlist and a research question, fetches market data, pulls news, appl
 
 ## Why you'd use it
 - **Public data sources only** — yfinance + RSS. No broker API, no real money, no regulatory headaches.
-- **Cost-aware by design** — model routing sends routine analysis to Gemini Flash-Lite and escalates only the skeptic-critique step to GPT-5.4 mini
+- **Cost-aware by design** — model routing sends routine analysis to Gemini Flash-Lite and escalates only the skeptic-critique step to GPT-5 mini
 - **Alerts, not execution** — the human stays in the loop
 - **Per-cycle cost: $0.005–$0.02**
 
@@ -23,8 +23,8 @@ Given a watchlist and a research question, fetches market data, pulls news, appl
 | Component | Choice | Rationale |
 |---|---|---|
 | **Orchestration** | LangGraph | Stateful graph fits long-running monitoring with human-in-loop alerts. Lowest token overhead per 2026 framework benchmarks. |
-| **LLM (analyst step)** | Gemini 3.1 Flash-Lite | Cheap summarization of data fetches ($0.25/$1.50 per M tokens) |
-| **LLM (skeptic/critique)** | GPT-5.4 mini | Highest agentic-task accuracy (OSWorld-Verified 72.2) — escalation pays for itself in reduced false positives |
+| **LLM (analyst step)** | Gemini 2.5 Flash | Cheap summarization of data fetches ($0.25/$1.50 per M tokens) |
+| **LLM (skeptic/critique)** | GPT-5 mini | Highest agentic-task accuracy (OSWorld-Verified 72.2) — escalation pays for itself in reduced false positives |
 | **Price data** | `yfinance` | Free, reliable |
 | **News** | RSS feeds (primary) + optional Polygon/NewsAPI | RSS covers most public-market signals at zero cost |
 | **Alert routing** | Slack / Telegram webhooks | Structured payload schema, one handler per channel |
@@ -42,7 +42,7 @@ Historical backtest on a fixed rule set (e.g., "alert when 50/200 MA cross + neg
 `make eval` reproduces the score on a held-out window.
 
 ## Expected cost per polling cycle
-$0.005–$0.02 (one Flash-Lite analysis + one GPT-5.4 mini critique on triggered signals only).
+$0.005–$0.02 (one Flash-Lite analysis + one GPT-5 mini critique on triggered signals only).
 
 ## Disclaimer
 

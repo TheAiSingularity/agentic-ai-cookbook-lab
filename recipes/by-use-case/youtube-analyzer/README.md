@@ -19,7 +19,7 @@ All outputs are typed — you get back a Pydantic model you can programmatically
 
 ## Why you'd use it
 - **Cheapest quality transcript pipeline in 2026:** yt-dlp when subtitles exist (free), Groq Whisper Large v3 Turbo fallback ($0.04/hour, 164–299× real-time)
-- **No chunking headaches:** Gemini 3.1 Flash-Lite's 1M context handles full transcripts in one call
+- **No chunking headaches:** Gemini 2.5 Flash's 1M context handles full transcripts in one call
 - **Structured outputs are the whole point** — Pydantic AI's sweet spot
 - **Per-video cost: $0.001–$0.02**
 
@@ -28,7 +28,7 @@ All outputs are typed — you get back a Pydantic model you can programmatically
 | Component | Choice | Rationale |
 |---|---|---|
 | **Orchestration** | Pydantic AI | ~160 LoC for reference chat app (lowest code overhead); typed structured outputs are the differentiator for chapter/title/summary schemas |
-| **LLM** | Gemini 3.1 Flash-Lite alone | 1M context = entire transcript in one call, zero chunking. $0.25/$1.50 per M tokens. No escalation needed for this task. |
+| **LLM** | Gemini 2.5 Flash alone | 1M context = entire transcript in one call, zero chunking. $0.25/$1.50 per M tokens. No escalation needed for this task. |
 | **Transcript (primary)** | `yt-dlp` | Free; covers ~80% of popular videos via existing subtitles |
 | **Transcript (fallback)** | Groq Whisper Large v3 Turbo | Cheapest + fastest ASR April 2026: $0.04/hour, 164–299× real-time |
 

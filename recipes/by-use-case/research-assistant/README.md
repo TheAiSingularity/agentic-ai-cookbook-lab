@@ -9,7 +9,7 @@ Answers research questions by combining web search, page-fetching, and an LLM re
 Anyone who needs a production-grade research agent that's cheap to run, accurate, and easy to extend. Clone it, swap the eval set for your domain, and you have a custom research tool. This is also the canonical reference implementation for LangGraph + contextual-RAG + Exa — the 2026 SOTA research stack.
 
 ## Why you'd use it
-- **Cheap and accurate:** Gemini 3.1 Flash-Lite + Exa highlights keeps per-query cost at $0.01–$0.03
+- **Cheap and accurate:** Gemini 2.5 Flash + Exa highlights keeps per-query cost at $0.01–$0.03
 - **Reproducible quality:** ships with a 10-question eval set and a factuality + citation-precision scorer
 - **Production path included:** graduate to `production/` for HermesClaw-sandboxed execution with observability
 
@@ -20,8 +20,8 @@ Anyone who needs a production-grade research agent that's cheap to run, accurate
 | **Orchestration** | LangGraph | Lowest token overhead for stateful search-and-synthesize loops. Production-standard Python framework. |
 | **Web search** | Exa | 81% vs Tavily 71% on complex retrieval; 2–3× faster; sends 50–75% fewer tokens to the LLM via query-dependent highlights |
 | **Retrieval** | `core/rag/` (contextual retrieval + BM25 + dense hybrid + cross-encoder rerank) | Anthropic contextual retrieval reduces retrieval failures by 67%; two-stage pipeline hits Recall@5 0.816 |
-| **LLM (default)** | Gemini 3.1 Flash-Lite | $0.25/$1.50 per M tokens, 1M context, 363 tok/s. Independently rated "best cheap model for high-volume" March 2026. |
-| **LLM (hard steps)** | GPT-5.4 mini | Highest agentic-task accuracy (OSWorld-Verified 72.2) — used only when reasoning complexity demands it |
+| **LLM (default)** | Gemini 2.5 Flash | $0.25/$1.50 per M tokens, 1M context, 363 tok/s. Independently rated "best cheap model for high-volume" March 2026. |
+| **LLM (hard steps)** | GPT-5 mini | Highest agentic-task accuracy (OSWorld-Verified 72.2) — used only when reasoning complexity demands it |
 
 Pattern: plan → Exa search → Exa get-contents (highlights) → synthesize → iterate → cited answer.
 
