@@ -1,44 +1,45 @@
 # research-assistant
 
-**Levels:** beginner ⬛ · production ⬛ · rust ⬛ · **all pending — ships in Wave 1**
+**Levels:** beginner ✅ · production ⬛ · rust ⬛ · **beginner tier shipped**
 
 ## What it does
-Answers research questions by combining web search, page-fetching, and an LLM reasoning loop. Given a question like "what are the tradeoffs between ColBERT and BGE rerankers in 2026?", it searches, reads, synthesizes, and produces a cited answer.
+Answers research questions by combining web search, evidence retrieval, and an LLM reasoning loop. Given a question like "what are the tradeoffs between ColBERT and BGE rerankers in 2026?", it searches, reads, synthesizes, and produces a cited answer.
 
 ## Who it's for
-Anyone who needs a production-grade research agent that's cheap to run, accurate, and easy to extend. Clone it, swap the eval set for your domain, and you have a custom research tool. This is also the canonical reference implementation for LangGraph + contextual-RAG + Exa — the 2026 SOTA research stack.
+Anyone who needs a production-grade research agent that's cheap to run, accurate, and easy to extend. Clone it, swap the eval set for your domain, and you have a custom research tool. Canonical reference implementation for LangGraph + `core/rag` + OpenAI's `web_search` tool.
 
 ## Why you'd use it
-- **Cheap and accurate:** Gemini 2.5 Flash + Exa highlights keeps per-query cost at $0.01–$0.03
-- **Reproducible quality:** ships with a 10-question eval set and a factuality + citation-precision scorer
+- **One key:** just `OPENAI_API_KEY` — no Exa / Tavily / Gemini account needed
+- **Parallel fan-out:** 3 sub-queries run concurrently → ~60–90s wall-clock for a typical query
+- **Reproducible quality:** ships with an eval harness (gold answers + factuality + citation-precision scorer)
 - **Production path included:** graduate to `production/` for HermesClaw-sandboxed execution with observability
 
-## SOTA stack (April 2026)
+## SOTA stack (OpenAI-only)
 
 | Component | Choice | Rationale |
 |---|---|---|
-| **Orchestration** | LangGraph | Lowest token overhead for stateful search-and-synthesize loops. Production-standard Python framework. |
-| **Web search** | Exa | 81% vs Tavily 71% on complex retrieval; 2–3× faster; sends 50–75% fewer tokens to the LLM via query-dependent highlights |
-| **Retrieval** | `core/rag/` (contextual retrieval + BM25 + dense hybrid + cross-encoder rerank) | Anthropic contextual retrieval reduces retrieval failures by 67%; two-stage pipeline hits Recall@5 0.816 |
-| **LLM (default)** | Gemini 2.5 Flash | $0.25/$1.50 per M tokens, 1M context, 363 tok/s. Independently rated "best cheap model for high-volume" March 2026. |
-| **LLM (hard steps)** | GPT-5 mini | Highest agentic-task accuracy (OSWorld-Verified 72.2) — used only when reasoning complexity demands it |
+| **Orchestration** | LangGraph | Lowest token overhead for stateful workflows |
+| **Planner** | `gpt-5-nano` | Cheapest tier — sub-query generation doesn't need reasoning muscle |
+| **Searcher** | `gpt-5-mini` + `web_search` tool (Responses API) | Built-in multi-step web search; no second API key |
+| **Retrieval** | `core/rag` v0 (OpenAI embeddings + cosine) | Narrows many highlights to top-k most relevant |
+| **Synthesizer** | `gpt-5-mini` | Strong reasoning where it matters most — the final cited answer |
 
-Pattern: plan → Exa search → Exa get-contents (highlights) → synthesize → iterate → cited answer.
+Pattern: plan → parallel `web_search` across sub-queries → retrieve → synthesize with citations.
 
-See [`beginner/techniques.md`](beginner/techniques.md) for primary-source citations on every choice. *(Lands Wave 1.)*
+See [`beginner/techniques.md`](beginner/techniques.md) for primary-source citations on every choice.
 
 ## Eval
 
-10 research questions × gold answers. Scorer measures:
-- **Factuality** — answer vs gold, via LLM-as-judge with citations
-- **Citation precision** — proportion of cited sources actually supporting claims
+Seeded with 3 research questions; full 10-question eval lands alongside closing [THE-89](https://linear.app/theaisingularity/issue/THE-89). Scorer measures:
+- **Factuality** — LLM-as-judge rating of candidate vs gold answer
+- **Citation precision** — proportion of required source domains actually cited
 
-`make eval` reproduces the score.
+`make eval` reproduces the scores.
 
 ## Expected cost per query
-$0.01–$0.03 at defaults (Gemini Flash-Lite + Exa + one rerank pass).
+**~$0.05–$0.25** — dominated by OpenAI's `web_search` tool per-call fee. Nano planner + cosine retrieval + a single synthesize call are pennies; the 3 parallel `web_search` invocations carry the bulk. Cheaper per-token routes exist (e.g., Exa + Gemini), but they require two more keys. The cookbook's default prioritizes one-key simplicity — see `techniques.md` for a note on when to swap back.
 
 ## See also
 - [`../../../core/rag/`](../../../core/rag/) — the retrieval module this recipe pulls from
 - [`../../../foundations/what-is-hermes-agent.md`](../../../foundations/what-is-hermes-agent.md) — context on the agent runtime
-- [`../../../comparisons/rag-sota-2026.md`](../../../comparisons/) — landscape page explaining why this retrieval stack won
+- [`../../../comparisons/rag-sota-2026.md`](../../../comparisons/) — landscape page explaining why this retrieval stack won (lands Wave 2)

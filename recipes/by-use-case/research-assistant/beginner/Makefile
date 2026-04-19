@@ -9,9 +9,9 @@ REPO_ROOT := $(abspath ../../../..)
 help:
 	@echo "Targets:"
 	@echo "  install  — create .venv and install requirements"
-	@echo "  run      — run the recipe (requires EXA_API_KEY, GOOGLE_API_KEY, OPENAI_API_KEY)"
+	@echo "  run      — run the recipe (requires OPENAI_API_KEY)"
 	@echo "  smoke    — live end-to-end check with a canned question"
-	@echo "  test     — mocked unit tests (no API keys needed)"
+	@echo "  test     — mocked unit tests (no API key needed)"
 	@echo "  clean    — remove .venv"
 
 $(PYBIN):
@@ -25,8 +25,6 @@ run: $(PYBIN)
 	PYTHONPATH=$(REPO_ROOT) $(PYBIN) main.py "$(Q)"
 
 smoke: $(PYBIN)
-	@test -n "$$EXA_API_KEY" || (echo "EXA_API_KEY not set" && exit 1)
-	@test -n "$$GOOGLE_API_KEY" || (echo "GOOGLE_API_KEY not set" && exit 1)
 	@test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY not set" && exit 1)
 	PYTHONPATH=$(REPO_ROOT) $(PYBIN) main.py "What is Anthropic's contextual retrieval and why does it reduce retrieval failures?"
 

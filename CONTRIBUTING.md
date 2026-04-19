@@ -4,7 +4,7 @@ Thanks for your interest. This repo is a **SOTA cookbook for agent tasks** — o
 
 ## The rules that don't bend
 
-1. **Every beginner recipe runs in ≤60s from a fresh clone via `make run`.** Longer than that = doesn't ship.
+1. **Every beginner recipe runs in ≤90s from a fresh clone via `make run`.** Target ≤60s for simple recipes; research-oriented recipes that fan out web searches get a relaxed ≤90s budget (parallelized). Longer than that = doesn't ship.
 2. **Every beginner recipe is ≤100 lines and heavily commented** so a newcomer can read the whole thing in one sitting.
 3. **Every recipe README answers three questions, in this order:** What does it do? Who is it for? Why would you use it?
 4. **Every recipe is opinionated.** Pick the SOTA stack for the task, say why, don't hedge. We pick one framework, one retrieval stack, one LLM routing strategy — the *best* one, backed by current benchmarks.

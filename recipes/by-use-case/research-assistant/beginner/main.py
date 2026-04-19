@@ -1,84 +1,80 @@
-"""Research assistant — SOTA agentic recipe.
+"""Research assistant — SOTA agentic recipe (OpenAI-only).
 
-LangGraph pipeline: plan → search → retrieve → synthesize.
-Stack: Gemini 2.5 Flash (plan) · Exa highlights (search) · core/rag
-(retrieve) · GPT-5 mini (synthesize). ~$0.01–$0.03 per query.
-Override model names via MODEL_PLANNER / MODEL_SYNTHESIZER env vars.
+LangGraph plan→search→retrieve→synthesize. Single OpenAI key covers every
+step via model routing + the web_search tool. Override models via
+MODEL_PLANNER / MODEL_SEARCHER / MODEL_SYNTHESIZER env vars.
 See techniques.md for the SOTA choices with primary-source citations.
 """
 
-from __future__ import annotations
-
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))  # let core.rag resolve
 
 from core.rag import Retriever  # noqa: E402
-from exa_py import Exa  # noqa: E402
-from google import genai  # noqa: E402
 from langgraph.graph import END, StateGraph  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
-MODEL_PLANNER = os.getenv("MODEL_PLANNER", "gemini-2.5-flash")
+MODEL_PLANNER = os.getenv("MODEL_PLANNER", "gpt-5-nano")
+MODEL_SEARCHER = os.getenv("MODEL_SEARCHER", "gpt-5-mini")
 MODEL_SYNTHESIZER = os.getenv("MODEL_SYNTHESIZER", "gpt-5-mini")
-SEARCH_RESULTS_PER_QUERY = int(os.getenv("SEARCH_RESULTS_PER_QUERY", "3"))
-TOP_K_HIGHLIGHTS = int(os.getenv("TOP_K_HIGHLIGHTS", "8"))
-
+NUM_SUBQUERIES = int(os.getenv("NUM_SUBQUERIES", "3"))
+TOP_K_EVIDENCE = int(os.getenv("TOP_K_EVIDENCE", "8"))
 
 State = TypedDict("State", {"question": str, "subqueries": list[str], "evidence": list[dict], "answer": str})
 
 
 def _plan(state: State) -> dict:
-    """Break the question into 3 focused sub-queries (cheap planner model)."""
-    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
-    prompt = (
-        f"Break this research question into exactly 3 focused sub-queries that, "
-        f"together, would produce a well-cited answer. Return one sub-query per "
-        f"line, no numbering, no prose.\n\nQuestion: {state['question']}"
-    )
-    resp = client.models.generate_content(model=MODEL_PLANNER, contents=prompt)
-    subs = [line.strip(" -•*") for line in resp.text.splitlines() if line.strip()][:3]
+    """Break the question into N focused sub-queries (cheap planner model)."""
+    prompt = (f"Break this research question into exactly {NUM_SUBQUERIES} focused sub-queries. "
+              f"Return one per line, no numbering, no prose.\n\nQuestion: {state['question']}")
+    resp = OpenAI().chat.completions.create(model=MODEL_PLANNER, messages=[{"role": "user", "content": prompt}])
+    subs = [l.strip(" -•*") for l in (resp.choices[0].message.content or "").splitlines() if l.strip()][:NUM_SUBQUERIES]
     return {"subqueries": subs}
 
 
+def _search_one(sub: str) -> list[dict]:
+    """One Responses + web_search call for a single sub-query; returns evidence items."""
+    resp = OpenAI().responses.create(model=MODEL_SEARCHER, tools=[{"type": "web_search"}],
+        input=f"Research this and return a concise, factual summary with source URLs: {sub}")
+    items: list[dict] = []
+    for item in resp.output:
+        for block in getattr(item, "content", []) or []:
+            if getattr(block, "type", None) != "output_text":
+                continue
+            urls = [a.url for a in (block.annotations or []) if getattr(a, "type", None) == "url_citation"]
+            items.extend({"url": u, "title": u, "text": block.text} for u in urls or [""])
+    return items
+
+
 def _search(state: State) -> dict:
-    """Run each sub-query through Exa; collect highlight snippets as evidence."""
-    exa = Exa(api_key=os.environ["EXA_API_KEY"])
-    evidence: list[dict] = []
-    for sub in state["subqueries"]:
-        resp = exa.search_and_contents(
-            sub, num_results=SEARCH_RESULTS_PER_QUERY, highlights=True, type="auto"
-        )
-        for r in resp.results:
-            for hl in (r.highlights or []):
-                evidence.append({"url": r.url, "title": r.title or r.url, "text": hl})
-    return {"evidence": evidence}
+    """Fan-out: search each sub-query in parallel; collect evidence across all."""
+    with ThreadPoolExecutor(max_workers=NUM_SUBQUERIES) as pool:
+        results = list(pool.map(_search_one, state["subqueries"]))
+    return {"evidence": [e for items in results for e in items]}
 
 
 def _retrieve(state: State) -> dict:
-    """Use core/rag to pick the top-k most relevant highlights for synthesis."""
+    """Use core/rag to pick the top-k most relevant evidence for synthesis."""
     ev = state["evidence"]
-    if len(ev) <= TOP_K_HIGHLIGHTS:
+    if len(ev) <= TOP_K_EVIDENCE:
         return {"evidence": ev}
     r = Retriever()
     r.add([e["text"] for e in ev])
-    top = r.retrieve(state["question"], k=TOP_K_HIGHLIGHTS)
+    top = r.retrieve(state["question"], k=TOP_K_EVIDENCE)
     by_text = {e["text"]: e for e in ev}
     return {"evidence": [by_text[text] for text, _ in top]}
 
 
 def _synthesize(state: State) -> dict:
-    """Produce final cited answer using the stronger reasoning model."""
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    """Produce final cited answer using the synthesizer model."""
     bullets = "\n".join(f"[{i+1}] {e['text']}  (src: {e['url']})" for i, e in enumerate(state["evidence"]))
-    prompt = (
-        f"Answer using the evidence below. Cite sources inline as [1], [2], etc. "
-        f"Be concise and factual.\n\nQuestion: {state['question']}\n\nEvidence:\n{bullets}"
-    )
-    resp = client.chat.completions.create(model=MODEL_SYNTHESIZER, messages=[{"role": "user", "content": prompt}])
+    prompt = (f"Answer using the evidence below. Cite sources inline as [1], [2], etc. Be concise "
+              f"and factual.\n\nQuestion: {state['question']}\n\nEvidence:\n{bullets}")
+    resp = OpenAI().chat.completions.create(model=MODEL_SYNTHESIZER, messages=[{"role": "user", "content": prompt}])
     return {"answer": resp.choices[0].message.content or ""}
 
 

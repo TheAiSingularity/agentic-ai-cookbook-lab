@@ -1,36 +1,36 @@
 # research-assistant/beginner
 
 The canonical beginner-tier research assistant. LangGraph wires a 4-node
-pipeline that answers research questions with citations.
+pipeline that answers research questions with citations — using a single
+OpenAI key and no Exa / Tavily / Gemini keys.
 
 ## What it does
 
-Give it a research question — it plans sub-queries, searches the web via Exa,
-narrows evidence with `core/rag`, and synthesizes a cited answer.
+Give it a research question — it plans sub-queries, searches the web via
+OpenAI's built-in `web_search` tool, narrows evidence with `core/rag`, and
+synthesizes a cited answer.
 
 ```
-plan ──▶ search ──▶ retrieve ──▶ synthesize
-(Gemini) (Exa)      (core/rag)   (GPT-5 mini)
+plan ──▶ search (parallel) ──▶ retrieve ──▶ synthesize
+(nano)   (mini + web_search)    (core/rag)   (mini)
 ```
 
 ## Stack
 
 | Step | Tool | Why |
 |---|---|---|
-| plan | Gemini 2.5 Flash | Cheap, 1M ctx — sub-query generation doesn't need reasoning muscle |
-| search | Exa `search_and_contents` with highlights | Query-dependent highlights send 50–75% fewer tokens to the LLM |
-| retrieve | `core/rag` v0 (cosine) | Narrows many highlights to top-k most relevant |
-| synthesize | GPT-5 mini | Highest 2026 agentic-task accuracy where it matters most — the final answer |
+| plan | `gpt-5-nano` | Cheapest OpenAI tier — sub-query generation doesn't need reasoning muscle |
+| search | `gpt-5-mini` + `web_search` tool via Responses API | Model does multi-step web search internally; returns URL-cited snippets. Run in parallel across sub-queries. |
+| retrieve | `core/rag` v0 (OpenAI embeddings + cosine) | Narrows many highlights to top-k most relevant |
+| synthesize | `gpt-5-mini` | Strong reasoning where it matters most — the final cited answer |
 
 See [`techniques.md`](techniques.md) for primary-source citations.
 
 ## Run
 
 ```bash
-# Prerequisites
-export EXA_API_KEY=...
-export GOOGLE_API_KEY=...    # Gemini
-export OPENAI_API_KEY=...    # GPT-5 mini + embeddings (for core/rag)
+# Single API key covers every step
+export OPENAI_API_KEY=sk-...
 
 # Install and run
 make install
@@ -40,29 +40,37 @@ make run Q="your research question here"
 make smoke
 ```
 
-## Test (no API keys needed)
+Expected wall-clock: ~45–90s for a typical query (3 parallel web-search
+calls, each doing multi-step reasoning, then one synthesis). Expected
+cost: ~$0.05–$0.25 per query — dominated by `web_search` tool fees.
+
+## Test (no API key needed)
 
 ```bash
 make test
 ```
 
-Uses fully mocked clients — verifies the graph wiring, node contracts, and
-state shape without touching any network.
+Uses fully mocked clients — verifies the graph wiring, node contracts,
+parallel fan-out, and state shape without touching any network.
 
-## Expected cost
+## Override the defaults
 
-$0.01–$0.03 per query at defaults (3 sub-queries × 3 Exa results × 1 synthesis
-call). Swap `MODEL_PLANNER` / `MODEL_SYNTHESIZER` env vars if you want to
-route differently.
+```bash
+export MODEL_PLANNER=gpt-5-mini        # more capable planner
+export MODEL_SEARCHER=gpt-5             # deeper research searcher
+export MODEL_SYNTHESIZER=gpt-5          # better final synthesis
+export NUM_SUBQUERIES=5                 # broader fan-out
+export TOP_K_EVIDENCE=12                # more evidence into synthesis
+```
 
 ## Files
 
 ```
 beginner/
-├── main.py            # The LangGraph agent (~100 lines, commented)
+├── main.py            # The LangGraph agent (~96 lines, commented)
 ├── requirements.txt
 ├── Makefile           # run · smoke · test · install · clean
 ├── README.md          # you're reading it
 ├── techniques.md      # primary-source citations for every choice
-└── test_main.py       # mocked unit tests
+└── test_main.py       # mocked unit tests (12, all green)
 ```

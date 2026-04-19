@@ -10,7 +10,7 @@ Two indexes:
 
 | Recipe | Framework | LLM | Key components | Cost per run |
 |---|---|---|---|---|
-| [research-assistant/](by-use-case/research-assistant/) | LangGraph | Gemini 2.5 Flash | Exa search · `core/rag/` (contextual + hybrid + rerank) | $0.01–$0.03 |
+| [research-assistant/](by-use-case/research-assistant/) | LangGraph | `gpt-5-nano` + `gpt-5-mini` | OpenAI `web_search` tool · `core/rag` (embed + cosine) | ~$0.05–$0.25 |
 | [youtube-analyzer/](by-use-case/youtube-analyzer/) | Pydantic AI | Gemini 2.5 Flash (1M ctx) | yt-dlp · Groq Whisper Large v3 Turbo fallback | $0.001–$0.02 |
 | [trading-copilot/](by-use-case/trading-copilot/) | LangGraph | Flash-Lite + GPT-5 mini (routing) | yfinance · RSS news · Slack/Telegram alerts | $0.005–$0.02 |
 

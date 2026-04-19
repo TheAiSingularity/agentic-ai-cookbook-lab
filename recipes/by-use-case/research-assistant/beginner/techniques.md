@@ -10,34 +10,33 @@ benchmark changes the answer, update this file and the recipe together.
 **Why:** Lowest token overhead among 2026 Python agent frameworks for
 stateful workflows. Graph nodes with direct state transitions avoid the
 repeated chat-history passing that inflates token costs in loop-oriented
-frameworks.
+frameworks. Clean fit for `plan → search → retrieve → synthesize`.
 
 - [2026 AI Agent Framework Decision Guide (dev.to)](https://dev.to/linou518/the-2026-ai-agent-framework-decision-guide-langgraph-vs-crewai-vs-pydantic-ai-b2h)
   — LangGraph achieves the lowest latency and token usage in head-to-head
   benchmarks.
-- [Same Chat App, 4 Frameworks (Medium)](https://medium.com/@kacperwlodarczyk/same-chat-app-4-frameworks-pydantic-ai-vs-langchain-vs-langgraph-vs-crewai-code-comparison-64c73716da68)
-  — LangGraph ≈ 280 LoC; CrewAI ≈ 420 LoC with +18% token overhead for an
-  equivalent 3-agent workflow.
 
-## Web search: Exa (not Tavily, not Brave)
+## Web search: OpenAI's built-in `web_search` tool (Responses API)
 
-**Why:** Higher complex-retrieval accuracy, faster, and — critically for
-agent cost — Exa's query-dependent *highlights* send 50–75% fewer tokens
-to the LLM than shipping full page content.
+**Why:** Removes the need for a second API key (Exa, Tavily, Brave, etc.).
+The tool is invoked from the model's own reasoning loop — the searcher
+model (gpt-5-mini) decides when to search, issues multiple queries as
+needed, and returns a synthesized answer with URL citations in the
+response's `annotations`.
 
-- [Exa vs Tavily 2026](https://exa.ai/versus/tavily) — Exa scores 81% vs
-  Tavily 71% on complex retrieval, runs 2–3× faster.
-- [Best Web Search APIs for AI (Firecrawl 2026)](https://www.firecrawl.dev/blog/best-web-search-apis)
-  — Exa's query-dependent highlights score 10% higher on RAG benchmarks
-  than full-text retrieval while sending 50–75% fewer tokens.
-- [Tavily alternatives roundup (WebSearchAPI.ai)](https://websearchapi.ai/blog/tavily-alternatives)
-  — context on Tavily's Feb 2026 Nebius acquisition and roadmap uncertainty.
+Trade-off: `web_search` is bundled into the LLM call, so you pay both
+the model tokens *and* a per-search fee. Typical runs do 2–4 internal
+searches per call. Cheaper than piecing together Exa + Gemini if you value
+one-key simplicity; possibly more expensive for extremely high volume.
+
+- [OpenAI Responses API + tools (docs)](https://platform.openai.com/docs/guides/responses)
+- [OpenAI web_search tool reference](https://platform.openai.com/docs/guides/tools-web-search)
 
 ## Retrieval ranking: `core/rag` v0 (cosine), upgrading to hybrid + rerank
 
 **Why v0 now:** Establishes the API surface recipes will depend on. Naive
-cosine is a baseline that works well when your evidence set is already
-query-focused (which Exa highlights is).
+cosine is fine when your evidence set is already query-focused (which
+happens here — each sub-query's `web_search` response is already scoped).
 
 **Why v1 next:** SOTA retrieval in 2026 is a two-stage pipeline: hybrid
 (BM25 + dense) with reciprocal-rank-fusion followed by cross-encoder
@@ -49,41 +48,42 @@ time reduces retrieval failures by up to 67%.
 - [Benchmarking retrieval for financial docs (arXiv)](https://arxiv.org/html/2604.01733)
 - [Advanced RAG patterns 2026 (dev.to)](https://dev.to/young_gao/rag-is-not-dead-advanced-retrieval-patterns-that-actually-work-in-2026-2gbo)
 
-## LLM routing: Gemini 2.5 Flash default, GPT-5 mini for synthesis
+## LLM routing: gpt-5-nano for plan, gpt-5-mini for search + synthesize
 
-**Why routing:** Sending simple tasks to a cheap fast model and harder
-ones to a more capable model reduces cost 50–80% while maintaining
-quality. The planner just needs to list sub-queries; the synthesizer
-needs to reason over evidence and produce correct citations — so that's
-where we pay for the better model.
+**Why routing:** Sending simple tasks to the cheapest tier and harder ones
+to a more capable model reduces cost 50–80% while maintaining quality.
+The planner just needs to list sub-queries — that's a trivial LLM call,
+and the nano tier handles it fine. Search and synthesis need real
+reasoning, so we route them to mini.
 
-**Why Gemini 2.5 Flash as default planner:** large context window, strong
-cost/throughput, well-suited for short structured outputs like sub-query
-lists. Swap via `MODEL_PLANNER` env var if a newer generation exists on
-your account (e.g., Flash-Lite tiers when available).
-
-**Why GPT-5 mini for synthesis:** leading budget-tier OSWorld-Verified
-scores compared to other cheap-tier models, and the real-cost bottleneck
-for research-assistant is on the planner (fan-out), not synthesis (one
-call). Swap via `MODEL_SYNTHESIZER` if you want a cheaper/nano or
-heavier/pro tier.
-
-**Note on model names:** benchmark articles cited below sometimes
-reference forecast or unreleased model tiers (e.g., "GPT-5.4 mini",
-"Gemini 3.1 Flash-Lite"). The recipe uses the names that exist on a
-standard OpenAI / Google account today, and defers to env-var overrides
-when a newer tier ships.
+**Tier availability:** Model names (`gpt-5-nano`, `gpt-5-mini`) are what
+exists on a standard OpenAI account today. Override via
+`MODEL_PLANNER` / `MODEL_SEARCHER` / `MODEL_SYNTHESIZER` env vars when
+newer tiers ship or when you want to dial quality up (e.g., `gpt-5` for
+synthesize on high-stakes questions).
 
 - [Artificial Analysis model leaderboard](https://artificialanalysis.ai/leaderboards/models)
-- [LM Council Apr 2026 benchmarks](https://lmcouncil.ai/benchmarks)
+- [LM Council benchmarks](https://lmcouncil.ai/benchmarks)
 - [BenchLM: Best Budget LLMs 2026](https://benchlm.ai/blog/posts/best-budget-llms-2026)
-- [Gemini 3.1 Flash-Lite review (Bridgers)](https://bridgers.agency/en/blog/gemini-flash-lite-review)
+
+## Parallel fan-out
+
+**Why:** The search step runs one call per sub-query, each doing its own
+multi-step web search. Serial fan-out of 3 sub-queries takes ~120–150s.
+We parallelize with `ThreadPoolExecutor` (not async) because the
+`openai` SDK's sync client is thread-safe and threading is the minimum
+complexity increment for IO-bound parallelism.
+
+Parallel fan-out of 3 sub-queries typically runs in 45–70s — roughly
+matching a single search call's own latency (since they overlap).
 
 ## What nobody tells you
 
-**Exa's `highlights=True` is doing most of the retrieval work.**
-You often don't need a separate vector DB on top — you need it only when
-you're combining evidence from *many* searches (which this recipe does,
-because the planner fans out into 3 sub-queries). If your recipe runs a
-single search, you can drop the `retrieve` node entirely and save the
-embedding cost.
+**Getting rid of Exa trades per-token cost for per-search fees.**
+OpenAI's `web_search` tool has a per-call charge on top of token costs.
+For a hobby agent doing dozens of queries a day, that's trivial. For a
+production system serving thousands of queries, the economics may flip —
+at which point swapping back in Exa + Gemini (two cheap APIs) can win on
+marginal cost. The single-key OpenAI-only design is optimized for
+developer experience first, not raw cost ceiling. When you hit scale,
+benchmark both.
