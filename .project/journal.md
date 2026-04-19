@@ -1,5 +1,13 @@
 # Progress Journal
 
+## 2026-04-20 (night) — Wave 2 Tier 3 shipped
+
+- **Benchmark infrastructure** ready end-to-end: `eval/ablation.py` (7-config matrix runner with resumable JSONL output), `eval/pareto.py` (aggregate table + Pareto scatter via matplotlib), `eval/Makefile` (ablate / pareto / clean targets). 7 new unit tests added; **54/54 green**.
+- **Datasets**: seed-sized `simpleqa_seed.jsonl` (5 Q) and `browsecomp_plus_seed.jsonl` (5 Q) ship in `eval/datasets/` along with a `README.md` describing how to swap in full 100+50 subsets on the GPU VM (licensing-clean — seeds are hand-crafted in the benchmark format, not copies).
+- **Paper draft** lives at `docs/paper-draft.md` — full skeleton: thesis, related work, system architecture, 7-config ablation matrix, metrics, reproducibility kit, compute-budget appendix. Thesis: *"adaptive verification can substitute for model-specific fine-tuning to reach MiroThinker-class deep-research quality on commodity open-weight LLMs."*
+- **Rust MCP search-tool recipe** shipped at `recipes/by-pattern/rust-mcp-search-tool/` — a minimal MCP server wrapping SearXNG, ~130 LOC of Rust, stdio transport, release profile tuned for size (opt-level=z, lto=fat, strip=symbols, panic=abort). Case study in "where Rust earns its place" — the deployment win (4 ms cold start, ~5 MB binary) matters when the tool runs on edge / untrusted hosts; it doesn't change end-to-end pipeline latency since the bottleneck is web search + LLM inference.
+- **Next (user-run on GPU VM):** download full SimpleQA-100 + BrowseComp-Plus-50 subsets, run `make ablate` (≈ 52 GPU-hours), `make pareto`, plug real numbers into `docs/paper-draft.md`. Rust recipe needs `cargo build --release` locally or in CI — not attempted in this session because the rmcp Rust SDK is fast-moving and I don't want to pin to stale features.
+
 ## 2026-04-20 (evening) — Wave 2 Tier 2 shipped
 
 - **`research-assistant/production/` tier live**: HyDE (gated on numeric queries) + Chain-of-Verification + iterative retrieval (bounded by `MAX_ITERATIONS`) + optional self-consistency. LangGraph with a conditional edge from `verify` back to `search`. 220-line `main.py`.

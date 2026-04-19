@@ -1,0 +1,31 @@
+[package]
+name = "rust-mcp-search-tool"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Minimal Rust MCP server wrapping a SearXNG instance — a case study in where Rust earns its place in the agent stack."
+repository = "https://github.com/TheAiSingularity/agentic-ai-cookbook-lab"
+
+[[bin]]
+name = "mcp-search"
+path = "src/main.rs"
+
+[dependencies]
+# MCP SDK — keep version pin flexible while 2026 is still moving
+rmcp = { version = "0.2", features = ["server", "transport-io"] }
+# HTTP client — rustls default for a static, small binary
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "io-std"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+# Aim for a small, fast binary — this whole recipe is "where Rust earns its place"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
