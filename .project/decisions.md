@@ -1,5 +1,14 @@
 # Decisions
 
+## DEC-010 — Wave 4: local-first engine enhancements (rerank + fetch + trace), all env-gated
+**Date:** 2026-04-20
+**Context:** After Wave 2 Tier 4 shipped, the production pipeline had three holes. (1) `CrossEncoderReranker` existed in `core/rag` but was never wired in — production used hybrid-only retrieval. (2) SearXNG returns 200-char snippets, which fail on multi-hop factual questions that need full-article context. (3) Debugging locally was opaque — no per-call timing/token visibility, and shipping a SaaS telemetry hook would violate the "no vendor lock-in, zero-$/query" positioning.
+**Decision:** Ship three enhancements, all local-first / self-hostable / env-gated with safe defaults:
+- **W4.1** · Cross-encoder rerank wired into `_retrieve`. Two-stage (hybrid top-N → `BAAI/bge-reranker-v2-m3` top-K). `ENABLE_RERANK=0` default because first run downloads ~560MB; turning it on is a one-line env flip. Graceful fallback to hybrid-only if model loading fails.
+- **W4.2** · New `_fetch_url` node between `retrieve` and `compress`. Uses `trafilatura` (Apache-2.0) to clean-text-extract each evidence URL. `ENABLE_FETCH=1` default, `FETCH_MAX_URLS=8` concurrency cap, per-URL failures silently fall back to snippet.
+- **W4.3** · Observability trace. `_chat` records `{node, model, latency_s, tokens_est, prompt_chars, response_chars}` via a module-level `_TRACE_BUFFER`; each node drains + tags it into `state["trace"]`; CLI prints per-node / per-model summary at end. `ENABLE_TRACE=1` default. No network egress.
+**Consequences:** Production main.py grows from 384 → ~485 LOC. Test count jumps 98 → 114 (16 new Wave 4 tests, 1 existing adjusted for the new `trace` return key). `trafilatura>=1.12.0` added to requirements. The graph gains one node: `retrieve → fetch_url → compress`. `docs/how-it-works.md` SOTA table gains two rows (full-page fetch ✅, per-call observability without SaaS ✅). Nothing in Tier 2 or Tier 4 was modified — these are purely additive.
+
 ## DEC-009 — trading-copilot skips research-assistant's HyDE/FLARE/compression/plan-refinement/router
 **Date:** 2026-04-20
 **Context:** Research-assistant's production tier has 9 techniques across Tiers 2 + 4. Transferring all of them to trading-copilot would add complexity without benefit — many are domain-specific to open-web research.

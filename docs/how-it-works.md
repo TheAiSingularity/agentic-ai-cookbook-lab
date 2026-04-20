@@ -16,18 +16,20 @@ local Ollama, or a GPU box with vLLM — no lock-in. When self-hosted,
 
 ## 2-minute pitch
 
-It's a **LangGraph pipeline with seven nodes**:
+It's a **LangGraph pipeline with eight nodes**:
 
 ```
-classify → plan → search → retrieve → compress → synthesize → verify
+classify → plan → search → retrieve → fetch_url → compress → synthesize → verify
 ```
 
 Every node is env-toggleable, so we can leave-one-out ablate every technique.
 
 **Retrieval is 2026 SOTA:** BM25 + dense hybrid with Reciprocal Rank Fusion,
-optional cross-encoder reranking (BAAI/bge-reranker-v2-m3), optional
-contextual chunking from Anthropic. Search is **self-hosted SearXNG**
-meta-searching DuckDuckGo / Bing / Wikipedia / arXiv — no paid API.
+cross-encoder reranking (BAAI/bge-reranker-v2-m3), optional contextual
+chunking from Anthropic. Search is **self-hosted SearXNG** meta-searching
+DuckDuckGo / Bing / Wikipedia / arXiv — no paid API. Each result URL is
+then fetched and cleaned with **trafilatura** so the agent reads the full
+article, not just a snippet.
 
 **Verification is the wedge.** After synthesis, a Chain-of-Verification
 (CoVe) step decomposes the answer into discrete claims and checks each
@@ -36,8 +38,12 @@ claims and regenerates. A **step-level critic** judges every major node's
 output along the way — ThinkPRM-style. When the synthesizer hedges ("the
 evidence does not specify..."), **FLARE** triggers a targeted re-search.
 
-**Reproducible:** 12-config ablation matrix, 68 unit tests, runs on
+**Reproducible:** 12-config ablation matrix, 114 unit tests, runs on
 an Apple M4 Mac or a 4×RTX 6000 Pro workstation with one command each.
+
+**Fully observable.** Every LLM call records its model, latency, and token
+cost into a per-query trace, printed at the end of the run. No SaaS
+telemetry hook — the trace stays on your machine.
 
 ## Technical depth
 
@@ -59,6 +65,11 @@ contextual retrieval (up to −67% retrieval failures).
 - **T4.3** Question classifier router — routes compute by `{factoid|multihop|synthesis}`
 - **T4.4** LLM-based evidence compression (LongLLMLingua-lite, +17-21% literature gain)
 - **T4.5** Plan refinement — regenerate decomposition when critic rejects (opt-in)
+
+**Wave 4 — local-first engine enhancements:**
+- **W4.1** Cross-encoder rerank — `HybridRetriever` top-50 → `bge-reranker-v2-m3` top-K. Apache-2.0, self-hosted, ~560MB one-time download.
+- **W4.2** Full-page fetch — `trafilatura` pulls each result URL and extracts clean article text (beats Readability/Goose3 on TREC-HTML F1). Bounded concurrency; snippet fallback on failure.
+- **W4.3** Observability trace — per-call `{node, model, latency_s, tokens_est}` recorded to `state["trace"]` and summarized at CLI end. No external telemetry.
 
 **Tier 3 — evaluation infrastructure:**
 12-config ablation runner (A1-A3 · B1-B4 · C1-C5), Pareto plotter, 4-metric
@@ -89,6 +100,8 @@ substitutes for trajectory-distillation training.*
 | Trajectory-distillation training | ✅ implied | ✅ | ✅ (96k × 100-turn) | ❌ **no training** |
 | Public ablation matrix | ❌ | partial | partial | **✅** 12 configs |
 | Portable (OpenAI/Ollama/vLLM/SGLang) | N/A | ❌ | ❌ | **✅** via OPENAI_BASE_URL |
+| Full-page fetch (not just snippets) | ✅ | ✅ | ✅ | **✅** W4.2 trafilatura |
+| Per-call observability without SaaS | ❌ | ? | ? | **✅** W4.3 local trace |
 | Rust MCP tool case-study | N/A | N/A | N/A | **✅** |
 
 ### What SOTA has that we don't

@@ -1,8 +1,10 @@
-"""Mocked tests for research-assistant/production (Wave 2 Tiers 2 + 4).
+"""Mocked tests for research-assistant/production (Wave 2 Tiers 2+4 + Wave 4).
 
 Covers: HyDE gating, CoVe parsing, conditional iteration, self-consistency,
 step-level critic (T4.1), FLARE active retrieval (T4.2), question classifier
-router (T4.3), evidence compression (T4.4), plan refinement (T4.5).
+router (T4.3), evidence compression (T4.4), plan refinement (T4.5), plus the
+Wave 4 local-first engine enhancements: cross-encoder rerank wiring (W4.1),
+trafilatura fetch_url node (W4.2), and observability trace (W4.3).
 
 No network, no API key, no model downloads.
 """
@@ -106,6 +108,12 @@ def patched(monkeypatch):
 
         monkeypatch.setattr(cls, "__init__", make_patched(original))
 
+    # W4.2 — disable network-touching fetch by default; individual tests that
+    # want to exercise the node flip ENABLE_FETCH back on and stub _fetch_one.
+    monkeypatch.setattr(main, "ENABLE_FETCH", False)
+    # W4.3 — keep the trace buffer clean between tests.
+    main._TRACE_BUFFER.clear()
+
     return client
 
 
@@ -149,7 +157,8 @@ def test_verify_parses_cove_and_flags_unverified(patched):
 def test_verify_skipped_when_disabled(patched, monkeypatch):
     monkeypatch.setattr(main, "ENABLE_VERIFY", False)
     result = main._verify({"question": "q", "answer": "a", "evidence": [], "iterations": 0})
-    assert result == {"claims": [], "unverified": []}
+    assert result["claims"] == [] and result["unverified"] == []
+    assert "trace" in result
 
 
 def test_after_verify_iterates_when_unverified_and_budget_remaining(patched):
@@ -332,18 +341,217 @@ def test_plan_refinement_skipped_when_disabled(patched, monkeypatch):
     assert result["plan_rejects"] == 0
 
 
+# ── W4.1 — cross-encoder rerank wiring ────────────────────────────────
+
+def _ten_evidence() -> list[dict]:
+    return [{"url": f"u{i}", "text": f"passage {i} about topic"} for i in range(10)]
+
+
+def test_retrieve_passthrough_when_evidence_below_topk(patched):
+    ev = [{"url": f"u{i}", "text": f"t{i}"} for i in range(3)]
+    result = main._retrieve({"question": "q", "evidence": ev})
+    assert result["evidence"] == ev
+
+
+def test_retrieve_uses_hybrid_only_when_rerank_disabled(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_RERANK", False)
+    # Flag if the reranker gets constructed (it must NOT when disabled).
+    sentinel = {"called": False}
+
+    def boom(*a, **k):
+        sentinel["called"] = True
+        raise AssertionError("reranker should not be instantiated when ENABLE_RERANK=0")
+
+    monkeypatch.setattr(main, "_get_reranker", boom)
+    result = main._retrieve({"question": "topic", "evidence": _ten_evidence()})
+    assert sentinel["called"] is False
+    assert len(result["evidence"]) == main.TOP_K_EVIDENCE
+
+
+def test_retrieve_reranks_when_enabled(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_RERANK", True)
+
+    class FakeReranker:
+        def rerank(self, query, candidates, k):
+            # Return the last k passages, scored in reverse order — different
+            # from hybrid's ordering so we can assert rerank actually ran.
+            passages = [c[0] if isinstance(c, tuple) else c for c in candidates]
+            tail = passages[-k:]
+            return [(p, float(len(tail) - i)) for i, p in enumerate(tail)]
+
+    monkeypatch.setattr(main, "_get_reranker", lambda: FakeReranker())
+    ev = _ten_evidence()
+    result = main._retrieve({"question": "topic", "evidence": ev})
+    kept_texts = [e["text"] for e in result["evidence"]]
+    # With TOP_K_EVIDENCE=8 and our fake returning the last 8 of 10 candidates,
+    # passages 0 and 1 should have been filtered out by the reranker.
+    assert "passage 0 about topic" not in kept_texts
+    assert len(kept_texts) == main.TOP_K_EVIDENCE
+
+
+def test_retrieve_falls_back_when_reranker_raises(patched, monkeypatch, capsys):
+    monkeypatch.setattr(main, "ENABLE_RERANK", True)
+
+    class BrokenReranker:
+        def rerank(self, *a, **k):
+            raise RuntimeError("model download failed")
+
+    monkeypatch.setattr(main, "_get_reranker", lambda: BrokenReranker())
+    ev = _ten_evidence()
+    result = main._retrieve({"question": "topic", "evidence": ev})
+    assert len(result["evidence"]) == main.TOP_K_EVIDENCE
+    assert "falling back to hybrid-only" in capsys.readouterr().err
+
+
+# ── W4.2 — fetch_url / trafilatura ────────────────────────────────────
+
+def test_fetch_url_passthrough_when_disabled(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_FETCH", False)
+    ev = [{"url": "https://a.example/1", "text": "snippet"}]
+    result = main._fetch_url({"question": "q", "evidence": ev})
+    # Disabled node is a no-op on evidence; only trace is emitted.
+    assert "evidence" not in result
+    assert "trace" in result
+
+
+def test_fetch_url_replaces_text_on_successful_fetch(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_FETCH", True)
+    monkeypatch.setattr(main, "_fetch_one", lambda url: f"FULL TEXT FOR {url}")
+    ev = [
+        {"url": "https://a.example/1", "text": "snippet A"},
+        {"url": "https://b.example/2", "text": "snippet B"},
+    ]
+    result = main._fetch_url({"question": "q", "evidence": ev})
+    assert result["evidence"][0]["text"] == "FULL TEXT FOR https://a.example/1"
+    assert result["evidence"][0]["fetched"] is True
+    assert result["evidence"][1]["fetched"] is True
+
+
+def test_fetch_url_keeps_snippet_when_fetch_fails(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_FETCH", True)
+    monkeypatch.setattr(main, "_fetch_one", lambda url: None)
+    ev = [{"url": "https://dead.example/1", "text": "original snippet"}]
+    result = main._fetch_url({"question": "q", "evidence": ev})
+    assert result["evidence"][0]["text"] == "original snippet"
+    assert result["evidence"][0]["fetched"] is False
+
+
+def test_fetch_url_respects_max_urls_cap(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_FETCH", True)
+    monkeypatch.setattr(main, "FETCH_MAX_URLS", 2)
+    called: list[str] = []
+
+    def track(url):
+        called.append(url)
+        return f"full({url})"
+
+    monkeypatch.setattr(main, "_fetch_one", track)
+    ev = [{"url": f"u{i}", "text": f"s{i}"} for i in range(5)]
+    result = main._fetch_url({"question": "q", "evidence": ev})
+    assert len(called) == 2  # only first 2 fetched
+    assert result["evidence"][0]["fetched"] is True
+    assert result["evidence"][1]["fetched"] is True
+    # Remaining 3 are preserved as-is (beyond the cap).
+    assert len(result["evidence"]) == 5
+    assert "fetched" not in result["evidence"][2]
+
+
+def test_fetch_url_empty_evidence_returns_trace_only(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_FETCH", True)
+    result = main._fetch_url({"question": "q", "evidence": []})
+    assert "evidence" not in result
+    assert isinstance(result["trace"], list)
+
+
+# ── W4.3 — observability trace ────────────────────────────────────────
+
+def test_chat_appends_trace_entry_when_enabled(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_TRACE", True)
+    main._TRACE_BUFFER.clear()
+    _ = main._chat("test-model", "hello world")
+    assert len(main._TRACE_BUFFER) == 1
+    entry = main._TRACE_BUFFER[0]
+    assert entry["model"] == "test-model"
+    assert entry["prompt_chars"] == len("hello world")
+    assert entry["response_chars"] > 0
+    assert entry["latency_s"] >= 0.0
+    assert entry["tokens_est"] > 0
+
+
+def test_chat_skips_trace_when_disabled(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_TRACE", False)
+    main._TRACE_BUFFER.clear()
+    _ = main._chat("test-model", "hi")
+    assert main._TRACE_BUFFER == []
+
+
+def test_drain_trace_tags_node_and_clears_buffer(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_TRACE", True)
+    main._TRACE_BUFFER.clear()
+    main._chat("m1", "p1")
+    main._chat("m2", "p2")
+    drained = main._drain_trace("plan")
+    assert len(drained) == 2
+    assert all(e["node"] == "plan" for e in drained)
+    assert main._TRACE_BUFFER == []
+
+
+def test_merge_trace_appends_extras(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_TRACE", True)
+    main._TRACE_BUFFER.clear()
+    main._chat("m1", "p1")
+    merged = main._merge_trace(
+        {"trace": [{"node": "prior", "model": "x"}]},
+        "retrieve",
+        extras=[{"model": "hybrid", "latency_s": 0.1, "tokens_est": 0}],
+    )
+    assert merged[0]["node"] == "prior"              # existing preserved
+    assert merged[1]["node"] == "retrieve"           # drained LLM call
+    assert merged[2]["node"] == "retrieve"           # extras tagged too
+    assert merged[2]["model"] == "hybrid"
+
+
+def test_classify_contributes_trace(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_TRACE", True)
+    result = main._classify({"question": "q", "trace": []})
+    assert any(e["node"] == "classify" for e in result["trace"])
+
+
+def test_print_trace_summary_handles_empty_and_populated(capsys):
+    main._print_trace_summary([])
+    out = capsys.readouterr().out
+    assert out == ""  # empty trace → no output
+    main._print_trace_summary([
+        {"node": "plan", "model": "m1", "latency_s": 0.5, "tokens_est": 100},
+        {"node": "synthesize", "model": "m2", "latency_s": 1.2, "tokens_est": 500},
+    ])
+    out = capsys.readouterr().out
+    assert "trace summary" in out
+    assert "plan" in out and "synthesize" in out
+    assert "m1" in out and "m2" in out
+
+
 # ── Full-graph integration ────────────────────────────────────────────
 
 def test_full_graph_with_iteration(patched, monkeypatch):
-    """Classify → plan → search → retrieve → compress → synthesize → verify."""
+    """Classify → plan → search → retrieve → fetch_url → compress → synthesize → verify."""
     monkeypatch.setattr(main, "MAX_ITERATIONS", 1)
     monkeypatch.setattr(main, "ENABLE_CONSISTENCY", False)
     monkeypatch.setattr(main, "ENABLE_ACTIVE_RETR", False)  # keep the graph linear for this test
     graph = main.build_graph()
-    result = graph.invoke({"question": "Why does contextual retrieval improve recall?", "iterations": 0, "plan_rejects": 0})
+    result = graph.invoke({"question": "Why does contextual retrieval improve recall?", "iterations": 0, "plan_rejects": 0, "trace": []})
     assert "Final answer" in result["answer"]
     assert result["question_class"] == "multihop"
     assert result.get("iterations", 0) >= 1
+
+
+def test_full_graph_records_trace_across_nodes(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_TRACE", True)
+    monkeypatch.setattr(main, "ENABLE_ACTIVE_RETR", False)
+    graph = main.build_graph()
+    result = graph.invoke({"question": "Why does contextual retrieval improve recall?", "iterations": 0, "plan_rejects": 0, "trace": []})
+    nodes_in_trace = {e["node"] for e in result.get("trace", [])}
+    assert {"classify", "plan", "search", "synthesize"}.issubset(nodes_in_trace)
 
 
 if __name__ == "__main__":

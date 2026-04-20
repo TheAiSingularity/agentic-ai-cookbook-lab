@@ -1,9 +1,10 @@
 # research-assistant/production
 
-Same pipeline as `beginner/`, plus four adaptive-verification techniques
-that target the hardest questions. This tier exists because single-pass
-answering fails on multi-hop / ambiguous queries. Keep `beginner/` for
-teachability; ship `production/` when quality matters.
+Same pipeline as `beginner/`, plus adaptive-verification and local-first
+engine enhancements that target the hardest questions. This tier exists
+because single-pass answering fails on multi-hop / ambiguous queries, and
+because SearXNG snippets alone are too thin for serious research. Keep
+`beginner/` for teachability; ship `production/` when quality matters.
 
 ## What's added on top of beginner
 
@@ -26,22 +27,43 @@ teachability; ship `production/` when quality matters.
 | **T4.2 · FLARE active retrieval** (`_flare_augment`) | Detects hedged claims, re-searches for that exact claim, regenerates | `ENABLE_ACTIVE_RETR=1` |
 | **T4.5 · Plan refinement** | One-shot replan when the critic rejects the decomposition | `ENABLE_PLAN_REFINE=0` (opt-in, has loop risk) |
 
-### Pipeline (with Tier 4)
+### Wave 4 (local-first engine enhancements)
+
+Local-first means no paid APIs on the hot path. These three plug into the
+same portable stack (Ollama / vLLM / SGLang via `OPENAI_BASE_URL`, SearXNG
+for search, `core/rag` for retrieval).
+
+| Enhancement | Effect | Gated by |
+|---|---|---|
+| **W4.1 · Cross-encoder rerank** (`_retrieve`) | Two-stage: `HybridRetriever` returns top-N (default 50), `BAAI/bge-reranker-v2-m3` re-scores to top-K. Falls back to hybrid-only if the model can't load. | `ENABLE_RERANK=0` (opt-in; ~560MB first-run download) |
+| **W4.2 · Full-page fetch** (`_fetch_url`) | Pulls each SearXNG result URL, extracts clean article text with `trafilatura`. Concurrency-bounded. Per-URL failures keep the snippet as fallback. | `ENABLE_FETCH=1` (default on) |
+| **W4.3 · Observability trace** (`_chat` + CLI) | Records `{node, model, latency_s, tokens_est, prompt/response chars}` for every LLM call. Printed as a per-node / per-model summary at CLI end. | `ENABLE_TRACE=1` (default on) |
+
+Everything above is open-source and self-hostable. `BAAI/bge-reranker-v2-m3`
+is Apache-2.0, `trafilatura` is Apache-2.0, `sentence-transformers` is
+Apache-2.0, SearXNG is AGPL, Ollama is MIT. No key required anywhere.
+
+### Pipeline (with Tier 4 + Wave 4)
 
 ```
-classify → plan (+HyDE, +critic) → search (+critic) → retrieve → compress
-                                                                    │
-                                                                    ▼
-                                                          synthesize (+FLARE)
-                                                                    │
-                                                                    ▼
-                                                            verify (CoVe)
-                                                                    │
-                                                verified ──yes──▶ END
-                                                                    │
-                                                                    no
-                                                                    │
-                                              iterate (re-search failed claims) ─▶ search
+classify → plan (+HyDE, +critic) → search (+critic) → retrieve (+W4.1 rerank)
+                                                              │
+                                               W4.2 fetch_url ┘
+                                                              │
+                                                              ▼
+                                                           compress
+                                                              │
+                                                              ▼
+                                                    synthesize (+FLARE)
+                                                              │
+                                                              ▼
+                                                      verify (CoVe)
+                                                              │
+                                          verified ──yes──▶ END
+                                                              │
+                                                              no
+                                                              │
+                                    iterate (re-search failed claims) ─▶ search
 ```
 
 Compute scales with question difficulty: factoid questions exit the
@@ -81,9 +103,22 @@ export ENABLE_ACTIVE_RETR=1     # T4.2 FLARE re-search on hedged claims
 export ENABLE_COMPRESS=1        # T4.4 evidence compression before synthesize
 export ENABLE_PLAN_REFINE=0     # T4.5 replan when critic rejects (opt-in)
 
+# Wave 4 toggles (local-first engine enhancements)
+export ENABLE_RERANK=0          # W4.1 opt-in; first run downloads bge-reranker-v2-m3 (~560MB)
+export RERANK_CANDIDATES=50     # first-stage hybrid pool size
+export ENABLE_FETCH=1           # W4.2 trafilatura clean-text fetch (snippets → articles)
+export FETCH_TIMEOUT_SEC=10
+export FETCH_MAX_CHARS=8000     # truncate per page after extraction
+export FETCH_MAX_URLS=8         # cap concurrent fetches per cycle
+export ENABLE_TRACE=1           # W4.3 per-call observability, summary printed at CLI end
+
 make install
 make run Q="your hard multi-hop research question"
 ```
+
+Turning on rerank adds a `sentence-transformers` model load on first call
+(cold ≈ 20s, warm < 1s). Leave it off for quick CLI iterations, turn it
+on for the eval harness and real research runs.
 
 On a GPU VM with vLLM/SGLang, point `OPENAI_BASE_URL` at `:8000/v1` and
 set the model names to real tags (`Qwen/Qwen3.6-35B-A3B`, etc.).

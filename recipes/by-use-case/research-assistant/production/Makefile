@@ -29,7 +29,7 @@ smoke: $(PYBIN)
 	PYTHONPATH=$(REPO_ROOT) $(PYBIN) main.py "What is Anthropic's contextual retrieval and why does it reduce retrieval failures?"
 
 test: $(PYBIN)
-	PYTHONPATH=$(REPO_ROOT) $(PYBIN) -m pytest test_main.py -v
+	PYTHONPATH=$(REPO_ROOT) $(PYBIN) -m pytest test_production_main.py -v
 
 clean:
 	rm -rf $(VENV) .pytest_cache __pycache__

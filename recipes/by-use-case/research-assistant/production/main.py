@@ -1,11 +1,17 @@
-"""Research assistant — production tier (Wave 2 Tier 2 + Tier 4 stacked).
+"""Research assistant — production tier (Wave 2 Tiers 2+4 + Wave 4 local-first).
 
-Pipeline adds five Tier 4 techniques on top of Tier 2's CoVe + iterative
-retrieval. Each is independently toggleable for ablations:
+Wave 4 layers three local-first enhancements on top of Wave 2/4 adaptive
+verification. All three are env-gated and ship disabled or graceful-degrading
+so the existing pipeline keeps working on first clone.
 
-  [T4.3 classify] → plan → [T4.1 critic] → search → [T4.1 critic] → retrieve
+Pipeline:
+
+  [T4.3 classify] → plan → [T4.1 critic] → search → [T4.1 critic] → retrieve (+W4.1 rerank)
                                                                         │
-                                    [T4.4 compress] ◀────────────────────┘
+                                                       [W4.2 fetch_url] ◀┘
+                                                              │
+                                                              ▼
+                                    [T4.4 compress] ◀─────────┘
                                           │
                                           ▼
                                     synthesize ◀── [T4.2 FLARE active retrieve]
@@ -28,6 +34,9 @@ References:
   - FLARE — Forward-Looking Active REtrieval (Jiang et al. 2023; +62% on 2Wiki).
   - LongLLMLingua — prompt compression (Jiang et al. 2024; +17-21% on NaturalQuestions).
   - Compute-optimal test-time scaling — Snell et al. 2024; agent adaptation 2026.
+  - bge-reranker-v2-m3 — BAAI cross-encoder reranking. Two-stage retrieval
+    (hybrid → cross-encoder) lifts MRR 5-10 pts over hybrid-only on MTEB reranking.
+  - Trafilatura — Barbaresi 2021 (ACL). Beats Readability/Goose3 on TREC-HTML F1.
 
 Env vars (all defaults shown; most gates are 1=on):
   # Tier 2
@@ -43,11 +52,28 @@ Env vars (all defaults shown; most gates are 1=on):
   ENABLE_COMPRESS        1    T4.4 — LLM-based evidence compression
   ENABLE_PLAN_REFINE     0    T4.5 — opt-in; replan when step critic rejects plan
   CONSISTENCY_SAMPLES    3
+
+  # Wave 4 — local-first engine enhancements
+  ENABLE_RERANK          0    W4.1 — two-stage: hybrid top-N → cross-encoder top-K.
+                              Requires sentence-transformers + bge-reranker-v2-m3
+                              (~560MB download on first run). Gracefully degrades
+                              to hybrid-only if the model can't load.
+  RERANK_CANDIDATES     50    first-stage pool size when ENABLE_RERANK=1
+  ENABLE_FETCH           1    W4.2 — pull full page text with trafilatura.
+                              SearXNG returns snippets; this reads the article.
+                              Gracefully degrades to snippets if trafilatura
+                              isn't installed or a URL fails.
+  FETCH_TIMEOUT_SEC     10
+  FETCH_MAX_CHARS     8000    truncate per page after clean-text extraction
+  FETCH_MAX_URLS         8    cap concurrent fetches per retrieve cycle
+  ENABLE_TRACE           1    W4.3 — record {node, model, latency_s, tokens_est}
+                              per LLM call. Printed as a summary at CLI end.
 """
 
 import os
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TypedDict
@@ -55,7 +81,7 @@ from typing import TypedDict
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
 import requests  # noqa: E402
-from core.rag import HybridRetriever  # noqa: E402
+from core.rag import CrossEncoderReranker, HybridRetriever  # noqa: E402
 from langgraph.graph import END, StateGraph  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
@@ -85,6 +111,15 @@ ENABLE_ACTIVE_RETR = ENV("ENABLE_ACTIVE_RETR", "1") == "1"  # T4.2
 ENABLE_COMPRESS = ENV("ENABLE_COMPRESS", "1") == "1"  # T4.4
 ENABLE_PLAN_REFINE = ENV("ENABLE_PLAN_REFINE", "0") == "1"  # T4.5
 
+# Wave 4 — local-first engine enhancements.
+ENABLE_RERANK = ENV("ENABLE_RERANK", "0") == "1"  # W4.1
+RERANK_CANDIDATES = int(ENV("RERANK_CANDIDATES", "50"))
+ENABLE_FETCH = ENV("ENABLE_FETCH", "1") == "1"  # W4.2
+FETCH_TIMEOUT_SEC = int(ENV("FETCH_TIMEOUT_SEC", "10"))
+FETCH_MAX_CHARS = int(ENV("FETCH_MAX_CHARS", "8000"))
+FETCH_MAX_URLS = int(ENV("FETCH_MAX_URLS", "8"))
+ENABLE_TRACE = ENV("ENABLE_TRACE", "1") == "1"  # W4.3
+
 _NUMERIC_RE = re.compile(r"\b\d[\d,\.]*\b|\bhow many\b|\bwhen (was|did)\b|\bwhich year\b", re.IGNORECASE)
 _CITE_RE = re.compile(r"\[(\d+)\]")
 # FLARE: hedges that signal low-confidence claims worth re-searching.
@@ -97,7 +132,7 @@ _HEDGE_RE = re.compile(
 
 class State(TypedDict, total=False):
     question: str
-    question_class: str          # T4.3: "factoid" | "multihop" | "synthesis"
+    question_class: str              # T4.3: "factoid" | "multihop" | "synthesis"
     subqueries: list[str]
     evidence: list[dict]
     evidence_compressed: list[dict]  # T4.4 — compressed view used by synthesize
@@ -105,7 +140,32 @@ class State(TypedDict, total=False):
     claims: list[dict]
     unverified: list[str]
     iterations: int
-    plan_rejects: int            # T4.5 — bound on plan-refinement loops
+    plan_rejects: int                # T4.5 — bound on plan-refinement loops
+    trace: list[dict]                # W4.3 — per-call observability
+
+
+# ── W4.3 · Trace plumbing ─────────────────────────────────────────────
+# Module-level buffer captures every LLM call; nodes drain it into state.trace
+# so the CLI can print a per-node, per-model summary after the graph runs.
+
+_TRACE_BUFFER: list[dict] = []
+
+
+def _drain_trace(node: str) -> list[dict]:
+    """Tag buffered LLM-call entries with `node` and return them; clears the buffer."""
+    if not _TRACE_BUFFER:
+        return []
+    entries = [{"node": node, **e} for e in _TRACE_BUFFER]
+    _TRACE_BUFFER.clear()
+    return entries
+
+
+def _merge_trace(state: State, node: str, extras: list[dict] | None = None) -> list[dict]:
+    """Return the state's full trace list with this node's entries appended."""
+    delta = _drain_trace(node)
+    if extras:
+        delta.extend({"node": node, **e} for e in extras)
+    return state.get("trace", []) + delta
 
 
 # ── LLM plumbing ──────────────────────────────────────────────────────
@@ -115,10 +175,20 @@ def _llm() -> OpenAI:
 
 
 def _chat(model: str, prompt: str, temperature: float = 0.0) -> str:
+    t0 = time.monotonic()
     resp = _llm().chat.completions.create(
         model=model, messages=[{"role": "user", "content": prompt}], temperature=temperature
     )
-    return resp.choices[0].message.content or ""
+    content = resp.choices[0].message.content or ""
+    if ENABLE_TRACE:
+        _TRACE_BUFFER.append({
+            "model": model,
+            "latency_s": round(time.monotonic() - t0, 3),
+            "prompt_chars": len(prompt),
+            "response_chars": len(content),
+            "tokens_est": (len(prompt) + len(content)) // 4,
+        })
+    return content
 
 
 def _searxng(query: str, n: int = NUM_RESULTS_PER_QUERY) -> list[dict]:
@@ -168,7 +238,7 @@ def _critic(step: str, payload: str, context: str) -> tuple[bool, str]:
 def _classify(state: State) -> dict:
     """T4.3 — classify question into {factoid, multihop, synthesis}; downstream nodes use this."""
     if not ENABLE_ROUTER:
-        return {"question_class": "multihop"}
+        return {"question_class": "multihop", "trace": _merge_trace(state, "classify")}
     prompt = (
         "Classify this research question as exactly ONE of: factoid, multihop, synthesis.\n"
         "  factoid    = single short-answer fact (e.g. capital, year, name)\n"
@@ -177,10 +247,11 @@ def _classify(state: State) -> dict:
         "Reply with ONLY the single word.\n\n"
         f"Question: {state['question']}"
     )
-    label = _chat(MODEL_ROUTER, prompt).strip().lower().split()[0] if _chat else "multihop"
+    raw = _chat(MODEL_ROUTER, prompt).strip().lower()
+    label = raw.split()[0] if raw else "multihop"
     if label not in {"factoid", "multihop", "synthesis"}:
         label = "multihop"
-    return {"question_class": label}
+    return {"question_class": label, "trace": _merge_trace(state, "classify")}
 
 
 # ── Plan (+ HyDE + optional critic) ───────────────────────────────────
@@ -212,7 +283,12 @@ def _plan(state: State) -> dict:
         subs = [l.strip(" -•*") for l in _chat(MODEL_PLANNER, prompt2).splitlines() if l.strip()][:n_subs]
         rejects = 1
 
-    return {"subqueries": subs, "iterations": state.get("iterations", 0), "plan_rejects": rejects}
+    return {
+        "subqueries": subs,
+        "iterations": state.get("iterations", 0),
+        "plan_rejects": rejects,
+        "trace": _merge_trace(state, "plan"),
+    }
 
 
 # ── Search (+ optional critic on coverage) ────────────────────────────
@@ -241,21 +317,128 @@ def _search(state: State) -> dict:
     if ENABLE_STEP_VERIFY and not state.get("unverified"):
         preview = "\n".join(f"[{i+1}] {e['title']}" for i, e in enumerate(evidence[:12]))
         _critic("search", preview, state["question"])  # side-effect only: logs concern
-    return {"evidence": evidence}
+    return {"evidence": evidence, "trace": _merge_trace(state, "search")}
 
 
-# ── Retrieve + T4.4 compress ─────────────────────────────────────────
+# ── W4.1 · Retrieve with optional cross-encoder rerank ────────────────
+
+# Module-level singleton so the cross-encoder model only loads once per process.
+_RERANKER: CrossEncoderReranker | None = None
+
+
+def _get_reranker() -> CrossEncoderReranker:
+    global _RERANKER
+    if _RERANKER is None:
+        _RERANKER = CrossEncoderReranker()
+    return _RERANKER
+
 
 def _retrieve(state: State) -> dict:
+    """Hybrid retrieval, optionally followed by cross-encoder rerank (W4.1).
+
+    - No rerank: hybrid top-K passes straight through (existing behavior).
+    - Rerank on: hybrid retrieves RERANK_CANDIDATES, then cross-encoder picks top-K.
+    - If the cross-encoder fails to load (no sentence-transformers, no model
+      download), we log and fall back to hybrid-only — never crash the pipeline.
+    """
     ev = state["evidence"]
     if len(ev) <= TOP_K_EVIDENCE:
-        return {"evidence": ev}
+        return {"evidence": ev, "trace": _merge_trace(state, "retrieve")}
+
+    t0 = time.monotonic()
     r = HybridRetriever()
     r.add([e["text"] for e in ev])
-    top = r.retrieve(state["question"], k=TOP_K_EVIDENCE)
-    by_text = {e["text"]: e for e in ev}
-    return {"evidence": [by_text[text] for text, _ in top if text in by_text]}
 
+    reranked_flag = False
+    if ENABLE_RERANK:
+        stage1_k = min(RERANK_CANDIDATES, len(ev))
+        top = r.retrieve(state["question"], k=stage1_k)
+        try:
+            reranked = _get_reranker().rerank(state["question"], top, k=TOP_K_EVIDENCE)
+            picked = [text for text, _ in reranked]
+            reranked_flag = True
+        except Exception as exc:  # noqa: BLE001 — fall back on any failure
+            print(f"[rerank] falling back to hybrid-only: {exc}", file=sys.stderr)
+            picked = [text for text, _ in top[:TOP_K_EVIDENCE]]
+    else:
+        picked = [text for text, _ in r.retrieve(state["question"], k=TOP_K_EVIDENCE)]
+
+    by_text = {e["text"]: e for e in ev}
+    kept = [by_text[t] for t in picked if t in by_text]
+
+    extras = [{
+        "model": "hybrid+rerank" if reranked_flag else "hybrid",
+        "latency_s": round(time.monotonic() - t0, 3),
+        "tokens_est": 0,
+        "n_in": len(ev),
+        "n_out": len(kept),
+    }]
+    return {"evidence": kept, "trace": _merge_trace(state, "retrieve", extras)}
+
+
+# ── W4.2 · Fetch full page text ───────────────────────────────────────
+
+def _fetch_one(url: str) -> str | None:
+    """Download `url`, return clean article text (first FETCH_MAX_CHARS), or None."""
+    try:
+        import trafilatura  # type: ignore
+    except ImportError:
+        return None
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            return None
+        text = trafilatura.extract(
+            downloaded, favor_recall=False, include_comments=False, include_tables=False
+        )
+        if not text:
+            return None
+        return text[:FETCH_MAX_CHARS]
+    except Exception:  # noqa: BLE001 — any network / parse error → fall back to snippet
+        return None
+
+
+def _fetch_url(state: State) -> dict:
+    """W4.2 — replace per-source snippets with full article text where possible.
+
+    SearXNG gives us search-result snippets (~200 chars). Multi-hop questions
+    need the actual article — contextual retrieval, numerical citations, etc.
+    This node fetches each URL (bounded concurrency), extracts clean text via
+    trafilatura, and overwrites `e["text"]`. URLs that fail fetching keep
+    their snippet-derived text.
+    """
+    if not ENABLE_FETCH:
+        return {"trace": _merge_trace(state, "fetch_url")}
+    ev = state.get("evidence") or []
+    if not ev:
+        return {"trace": _merge_trace(state, "fetch_url")}
+
+    targets = ev[:FETCH_MAX_URLS]  # cap network load
+    t0 = time.monotonic()
+    with ThreadPoolExecutor(max_workers=max(len(targets), 1)) as pool:
+        fulls = list(pool.map(lambda e: _fetch_one(e["url"]), targets))
+
+    enriched: list[dict] = []
+    n_fetched = 0
+    for e, full in zip(targets, fulls):
+        if full:
+            enriched.append({**e, "text": full, "fetched": True})
+            n_fetched += 1
+        else:
+            enriched.append({**e, "fetched": False})
+    enriched.extend(ev[FETCH_MAX_URLS:])  # preserve any evidence beyond cap
+
+    extras = [{
+        "model": "trafilatura",
+        "latency_s": round(time.monotonic() - t0, 3),
+        "tokens_est": 0,
+        "n_fetched": n_fetched,
+        "n_attempted": len(targets),
+    }]
+    return {"evidence": enriched, "trace": _merge_trace(state, "fetch_url", extras)}
+
+
+# ── T4.4 · Compress ───────────────────────────────────────────────────
 
 def _compress(state: State) -> dict:
     """T4.4 — LLM-based evidence compression (portable alternative to LongLLMLingua).
@@ -265,7 +448,10 @@ def _compress(state: State) -> dict:
     each evidence chunk, focused on the question. Keeps URLs intact so citations still work.
     """
     if not ENABLE_COMPRESS or not state.get("evidence"):
-        return {"evidence_compressed": state.get("evidence", [])}
+        return {
+            "evidence_compressed": state.get("evidence", []),
+            "trace": _merge_trace(state, "compress"),
+        }
     bullets = "\n\n".join(f"[{i+1}] {e['text']}" for i, e in enumerate(state["evidence"]))
     prompt = (
         f"Compress each numbered chunk below to 2-3 short sentences that keep ONLY what "
@@ -282,7 +468,7 @@ def _compress(state: State) -> dict:
         idx = int(m.group(1)) - 1
         if 0 <= idx < len(compressed):
             compressed[idx] = {**compressed[idx], "text": m.group(2).strip()}
-    return {"evidence_compressed": compressed}
+    return {"evidence_compressed": compressed, "trace": _merge_trace(state, "compress")}
 
 
 # ── Synthesize (+ FLARE active retrieval on hedged claims) ───────────
@@ -319,17 +505,17 @@ def _synthesize(state: State) -> dict:
     """Synthesize once (or N for self-consistency); optionally FLARE-augment any hedged output."""
     if not ENABLE_CONSISTENCY:
         draft = _synthesize_once(state)
-        return {"answer": _flare_augment(state, draft)}
+        return {"answer": _flare_augment(state, draft), "trace": _merge_trace(state, "synthesize")}
     candidates = [_flare_augment(state, _synthesize_once(state)) for _ in range(CONSISTENCY_SAMPLES)]
     best = max(candidates, key=lambda a: _grounding_score(a, state.get("evidence_compressed") or state["evidence"]))
-    return {"answer": best}
+    return {"answer": best, "trace": _merge_trace(state, "synthesize")}
 
 
 # ── Verify + iteration ────────────────────────────────────────────────
 
 def _verify(state: State) -> dict:
     if not ENABLE_VERIFY:
-        return {"claims": [], "unverified": []}
+        return {"claims": [], "unverified": [], "trace": _merge_trace(state, "verify")}
     ev = state.get("evidence_compressed") or state["evidence"]
     bullets = "\n".join(f"[{i+1}] {e['text']}" for i, e in enumerate(ev))
     prompt = (f"You are verifying a candidate answer. List each standalone factual claim on its own line "
@@ -348,7 +534,12 @@ def _verify(state: State) -> dict:
             current["verified"] = "yes" in s.lower()
             current = None
     unverified = [c["text"] for c in claims if not c["verified"]]
-    return {"claims": claims, "unverified": unverified, "iterations": state.get("iterations", 0) + 1}
+    return {
+        "claims": claims,
+        "unverified": unverified,
+        "iterations": state.get("iterations", 0) + 1,
+        "trace": _merge_trace(state, "verify"),
+    }
 
 
 def _after_verify(state: State) -> str:
@@ -362,23 +553,58 @@ def _after_verify(state: State) -> str:
 def build_graph():
     g = StateGraph(State)
     for n, f in [("classify", _classify), ("plan", _plan), ("search", _search),
-                 ("retrieve", _retrieve), ("compress", _compress),
+                 ("retrieve", _retrieve), ("fetch_url", _fetch_url), ("compress", _compress),
                  ("synthesize", _synthesize), ("verify", _verify)]:
         g.add_node(n, f)
     g.set_entry_point("classify")
     for a, b in [("classify", "plan"), ("plan", "search"), ("search", "retrieve"),
-                 ("retrieve", "compress"), ("compress", "synthesize"), ("synthesize", "verify")]:
+                 ("retrieve", "fetch_url"), ("fetch_url", "compress"),
+                 ("compress", "synthesize"), ("synthesize", "verify")]:
         g.add_edge(a, b)
     g.add_conditional_edges("verify", _after_verify, {"search": "search", END: END})
     return g.compile()
 
 
+# ── CLI trace summary ─────────────────────────────────────────────────
+
+def _print_trace_summary(trace: list[dict]) -> None:
+    """One-pass summary: per-node and per-model totals."""
+    if not trace:
+        return
+    by_node: dict[str, dict] = {}
+    by_model: dict[str, dict] = {}
+    total_latency = 0.0
+    total_tokens = 0
+    for e in trace:
+        node = e.get("node", "?")
+        model = e.get("model", "?")
+        latency = float(e.get("latency_s", 0) or 0)
+        tokens = int(e.get("tokens_est", 0) or 0)
+        total_latency += latency
+        total_tokens += tokens
+        for bucket, key in ((by_node, node), (by_model, model)):
+            b = bucket.setdefault(key, {"calls": 0, "latency_s": 0.0, "tokens_est": 0})
+            b["calls"] += 1
+            b["latency_s"] += latency
+            b["tokens_est"] += tokens
+
+    print(f"\n── trace summary ({len(trace)} entries, {total_latency:.2f}s total, ~{total_tokens} tokens) ──")
+    print("  by node:")
+    for node, b in sorted(by_node.items(), key=lambda kv: -kv[1]["latency_s"]):
+        print(f"    {node:12s}  calls={b['calls']:2d}  latency={b['latency_s']:6.2f}s  tokens~{b['tokens_est']}")
+    print("  by model:")
+    for model, b in sorted(by_model.items(), key=lambda kv: -kv[1]["latency_s"]):
+        print(f"    {model:22s}  calls={b['calls']:2d}  latency={b['latency_s']:6.2f}s  tokens~{b['tokens_est']}")
+
+
 if __name__ == "__main__":
     q = " ".join(sys.argv[1:]) or "What is Anthropic's contextual retrieval and why does it reduce retrieval failures?"
     print(f"Q: {q}")
-    result = build_graph().invoke({"question": q, "iterations": 0, "plan_rejects": 0})
+    result = build_graph().invoke({"question": q, "iterations": 0, "plan_rejects": 0, "trace": []})
     print(f"\n[class: {result.get('question_class', '?')}]")
     print(f"\nA: {result['answer']}")
     if result.get("claims"):
         v = sum(1 for c in result["claims"] if c["verified"])
         print(f"\nVerified: {v}/{len(result['claims'])} claims  (iterations: {result.get('iterations', 0)})")
+    if ENABLE_TRACE:
+        _print_trace_summary(result.get("trace", []))
