@@ -7,18 +7,19 @@ see [`paper-draft.md`](paper-draft.md).
 
 ---
 
-## Current state (Wave 4 shipped)
+## Current state (Wave 5 shipped)
 
 | | |
 |---|---|
 | Recipes live | **research-assistant** (beginner + production + eval) · **trading-copilot** (beginner + production + eval) |
 | Case-study recipe | **rust-mcp-search-tool** |
-| Core shared library | `core/rag/` v1 — `HybridRetriever` · `CrossEncoderReranker` · `contextualize_chunks` |
-| Tests | **114/114 green**, all mocked (no network / no API keys) |
+| Core shared library | `core/rag/` v1 — `HybridRetriever` · `CrossEncoderReranker` · `contextualize_chunks` · `CorpusIndex` |
+| Tests | **135/135 green**, all mocked (no network / no API keys) |
 | Portable stack | OpenAI · Ollama · vLLM · SGLang — one env var (`OPENAI_BASE_URL`) |
 | Search | Self-hosted **SearXNG** (Docker) — no paid API |
 | Full-page fetch | **trafilatura** — self-hosted clean-text article extraction |
 | Reranking | **BAAI/bge-reranker-v2-m3** via `sentence-transformers` — Apache-2.0, local |
+| Local corpus | `scripts/index_corpus.py` — PDFs / markdown / text / HTML → `CorpusIndex`; queryable CLI + auto-merged into production pipeline via `LOCAL_CORPUS_PATH` |
 | Observability | Per-call trace (node, model, latency, tokens) — no SaaS |
 | Repo visibility | Private |
 | License | MIT |
@@ -57,6 +58,21 @@ Second flagship recipe in one session. Beginner + production + eval harness + ba
 - Eval: pandas-only backtest scorer with signal precision/recall, sample_window.yaml (6 months × 3 tickers).
 - Safety: build-time forbidden-symbols tests fail if anyone adds execution semantics (`place_order` / `alpaca` / `ib_insync` / etc.).
 - [DEC-009](../.project/decisions.md) documents techniques we deliberately skipped from research-assistant (HyDE, FLARE, compression, plan refinement, classifier router) because they don't transfer to structured-data monitoring.
+
+### Wave 5 — local corpus indexing + rerank verified live
+
+Close the other half of "local-first": the agent can now search your own
+documents alongside the web, and the rerank stage was verified against the
+real `bge-reranker-v2-m3` model end-to-end.
+
+| | |
+|---|---|
+| `core/rag/python/corpus.py` | `CorpusIndex` — persistable, source-tracked, built on `HybridRetriever`. Readers: `.md`, `.markdown`, `.txt` (raw), `.pdf` (via `pypdf`), `.html`, `.htm` (via trafilatura). Paragraph-aware character-window chunking with overlap. Disk format: `manifest.json` + `index.pkl`. BM25 state rebuilt at load time. |
+| `scripts/index_corpus.py` | CLI: `build`, `info`, `query`. Honors `OPENAI_BASE_URL` + `EMBED_MODEL` so embeddings flow through the same portable stack (Ollama nomic-embed-text on Mac; OpenAI on cloud). |
+| Production integration | `LOCAL_CORPUS_PATH` env var loads the index lazily on first `_search` call. Each sub-query pulls `LOCAL_CORPUS_TOP_K` matches (default 5), shaped as evidence items with `corpus://<source>#p<page>#c<chunk>` URLs. `_fetch_url` skips those URLs automatically (their text is already the full chunk). Trace records the augmentation. Graceful fallback to web-only on load failure — never blocks the pipeline. |
+| Tests | 13 new `test_corpus.py` (chunking, indexing, persistence round-trip, broken-file skipping, stable chunk IDs); 8 new pipeline tests (corpus URL shaping, load-failure caching, `_search` merge, `_fetch_url` skip). 114 → **135 green**. |
+| Live Mac smoke | Built a 5-file / 239-chunk corpus from the repo's own docs via Ollama `nomic-embed-text` in ~1 s. CLI query `"cross-encoder reranker"` returned the right chunks from `techniques.md`, `progress.md`, `paper-draft.md`. Production pipeline with `LOCAL_CORPUS_PATH` set: 5 web hits + 3 corpus hits merged into evidence; `_fetch_url` skipped all 3 corpus URLs (corpus_fetched=0, web_fetched=5). |
+| Rerank verified live | Scenario B re-run with `ENABLE_RERANK=1`. Cross-encoder model downloaded (~560 MB, one-time) and loaded in ~20 s; rerank inference then added ~1-2 s per call. Total wall-clock 208 s on Mac vs 152 s without rerank — delta is the one-time download + loading. On subsequent runs the cold-load is cached. |
 
 ### Wave 4 — research-assistant local-first engine enhancements
 
@@ -110,11 +126,11 @@ Every recipe has been run end-to-end on a Mac M4 Pro with local models and real 
 
 These are the known next steps, in priority order:
 
-1. **GPU VM ablation run** for the research paper — the harness is shipped; user needs to download SimpleQA-100 + BrowseComp-Plus-50 and run `make ablate` with Qwen3.6-35B-A3B to get publishable numbers. Wave 4's rerank + fetch + trace will all be part of the ablation matrix.
+1. **GPU VM ablation run** for the research paper — the harness is shipped; user needs to download SimpleQA-100 + BrowseComp-Plus-50 and run `make ablate` with Qwen3.6-35B-A3B to get publishable numbers. Wave 4's rerank + fetch + trace and Wave 5's corpus augmentation are all part of the ablation matrix now.
 
-2. **Local corpus indexing** — a script that takes a directory of PDFs/markdown and builds a `core/rag`-indexed offline corpus that research-assistant can query alongside SearXNG.
+2. **Streaming synthesis** — tokens streamed to stdout as they generate; unlocks reactive FLARE and better UX for interactive local use.
 
-3. **Streaming synthesis** — tokens streamed to stdout as they generate; unlocks reactive FLARE and better UX for interactive local use.
+3. **Corpus contextualization opt-in** — wire `contextualize_chunks` into `CorpusIndex.build` behind a `CONTEXTUALIZE=1` flag. Costs one LLM call per chunk at index time; Anthropic reports −35 to −67% retrieval failures. Deliberately deferred until a bigger local model makes the 239-chunk case cheap (a 30B on GPU VM would do it in under a minute).
 
 4. **Cross-recipe shared lib** — `_llm()` / `_chat()` / `_critic()` are duplicated across both recipes; refactor into `core/llm/` when a third recipe arrives.
 
@@ -161,7 +177,8 @@ agentic-ai-cookbook-lab/
 
 ## Recent commits (tip-down)
 
-- `(pending)` Wave 4: local-first engine enhancements (rerank + fetch_url + trace)
+- `(pending)` Wave 5: local corpus indexing (`CorpusIndex` + `scripts/index_corpus.py` + `LOCAL_CORPUS_PATH` integration)
+- `4f27c03` Wave 4: local-first engine enhancements (rerank + fetch_url + trace)
 - `2d28e74` Wave 3: trading-copilot recipe end-to-end (beginner + production + eval)
 - `8ac5ad6` Drop youtube-analyzer; rewrite stale READMEs to match Wave 2 Tier 4
 - `4260cf9` docs: add how-it-works elevator pitches + SOTA comparison

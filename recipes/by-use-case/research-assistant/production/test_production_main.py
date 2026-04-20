@@ -531,6 +531,129 @@ def test_print_trace_summary_handles_empty_and_populated(capsys):
     assert "m1" in out and "m2" in out
 
 
+# ── W5.1 — local corpus augmentation ─────────────────────────────────
+
+def _make_fake_corpus(monkeypatch, chunks: list[dict]) -> None:
+    """Install a fake corpus singleton that returns the given chunks on query()."""
+    from core.rag import CorpusChunk
+
+    class FakeIndex:
+        def __init__(self, items):
+            self.chunks = [
+                CorpusChunk(text=c["text"], source=c["source"],
+                            page=c.get("page"), chunk_idx=c.get("chunk_idx", 0))
+                for c in items
+            ]
+
+        def query(self, q, k=5):
+            return [(c, 1.0) for c in self.chunks[:k]]
+
+    monkeypatch.setattr(main, "LOCAL_CORPUS_PATH", "/fake/corpus")
+    monkeypatch.setattr(main, "_CORPUS", FakeIndex(chunks))
+    monkeypatch.setattr(main, "_CORPUS_LOAD_FAILED", False)
+
+
+def test_corpus_hits_returns_empty_when_path_unset(patched, monkeypatch):
+    monkeypatch.setattr(main, "LOCAL_CORPUS_PATH", "")
+    monkeypatch.setattr(main, "_CORPUS", None)
+    assert main._corpus_hits("anything") == []
+
+
+def test_corpus_hits_shapes_urls_with_page_and_chunk(patched, monkeypatch):
+    _make_fake_corpus(monkeypatch, [
+        {"text": "content A", "source": "paper.pdf", "page": 2, "chunk_idx": 7},
+        {"text": "content B", "source": "notes.md", "page": None, "chunk_idx": 0},
+    ])
+    hits = main._corpus_hits("q", k=5)
+    assert hits[0]["url"] == "corpus://paper.pdf#p2#c7"
+    assert hits[0]["title"] == "paper.pdf (p2)"
+    assert hits[0]["text"] == "content A"
+    assert hits[1]["url"] == "corpus://notes.md#c0"
+    assert hits[1]["title"] == "notes.md"
+
+
+def test_corpus_hits_handles_query_failure(patched, monkeypatch, capsys):
+    class BrokenIndex:
+        chunks = []
+        def query(self, *a, **k):
+            raise RuntimeError("index corrupted")
+
+    monkeypatch.setattr(main, "LOCAL_CORPUS_PATH", "/x")
+    monkeypatch.setattr(main, "_CORPUS", BrokenIndex())
+    monkeypatch.setattr(main, "_CORPUS_LOAD_FAILED", False)
+    assert main._corpus_hits("q") == []
+    assert "query failed" in capsys.readouterr().err
+
+
+def test_get_corpus_caches_load_failure_and_falls_back(patched, monkeypatch, capsys):
+    from core.rag import CorpusIndex
+
+    monkeypatch.setattr(main, "LOCAL_CORPUS_PATH", "/nonexistent")
+    monkeypatch.setattr(main, "_CORPUS", None)
+    monkeypatch.setattr(main, "_CORPUS_LOAD_FAILED", False)
+
+    call_count = {"n": 0}
+
+    def failing_load(path, embedder=None):
+        call_count["n"] += 1
+        raise FileNotFoundError(str(path))
+
+    monkeypatch.setattr(CorpusIndex, "load", classmethod(lambda cls, p, embedder=None: failing_load(p)))
+    assert main._get_corpus() is None
+    assert main._get_corpus() is None  # still None, but load not retried
+    assert call_count["n"] == 1
+    assert "load failed" in capsys.readouterr().err
+
+
+def test_search_merges_corpus_hits_into_evidence(patched, monkeypatch):
+    _make_fake_corpus(monkeypatch, [
+        {"text": "local corpus fact", "source": "doc.md"},
+    ])
+    state = {"question": "q", "subqueries": ["sub one", "sub two"], "iterations": 0, "plan_rejects": 0}
+    result = main._search(state)
+    urls = [e["url"] for e in result["evidence"]]
+    # Web hits come first (from the patched SearXNG), corpus hits appended.
+    assert any(u.startswith("corpus://doc.md") for u in urls)
+    # Trace records the corpus augmentation.
+    assert any(e.get("model") == "corpus" for e in result["trace"])
+
+
+def test_search_no_corpus_augmentation_when_unset(patched, monkeypatch):
+    monkeypatch.setattr(main, "LOCAL_CORPUS_PATH", "")
+    monkeypatch.setattr(main, "_CORPUS", None)
+    state = {"question": "q", "subqueries": ["only sub"], "iterations": 0, "plan_rejects": 0}
+    result = main._search(state)
+    urls = [e["url"] for e in result["evidence"]]
+    assert not any(u.startswith("corpus://") for u in urls)
+    # No "corpus" entry in trace.
+    assert not any(e.get("model") == "corpus" for e in result["trace"])
+
+
+def test_fetch_one_skips_corpus_urls(patched):
+    # Corpus URLs aren't fetchable; _fetch_one returns None so _fetch_url keeps
+    # the existing text and flags fetched=False.
+    assert main._fetch_one("corpus://paper.pdf#p0#c3") is None
+
+
+def test_fetch_url_preserves_corpus_text(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_FETCH", True)
+    ev = [
+        {"url": "https://a.example/1", "text": "web snippet"},
+        {"url": "corpus://paper.pdf#c0", "text": "full corpus chunk text"},
+    ]
+    # Make web fetches succeed; corpus fetches naturally return None via real _fetch_one.
+    def fake_fetch(url):
+        if url.startswith("corpus://"):
+            return None
+        return f"FULL({url})"
+    monkeypatch.setattr(main, "_fetch_one", fake_fetch)
+    result = main._fetch_url({"question": "q", "evidence": ev, "trace": []})
+    by_url = {e["url"]: e for e in result["evidence"]}
+    assert by_url["https://a.example/1"]["fetched"] is True
+    assert by_url["corpus://paper.pdf#c0"]["fetched"] is False
+    assert by_url["corpus://paper.pdf#c0"]["text"] == "full corpus chunk text"
+
+
 # ── Full-graph integration ────────────────────────────────────────────
 
 def test_full_graph_with_iteration(patched, monkeypatch):

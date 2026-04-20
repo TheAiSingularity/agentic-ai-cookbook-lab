@@ -43,27 +43,52 @@ Everything above is open-source and self-hostable. `BAAI/bge-reranker-v2-m3`
 is Apache-2.0, `trafilatura` is Apache-2.0, `sentence-transformers` is
 Apache-2.0, SearXNG is AGPL, Ollama is MIT. No key required anywhere.
 
-### Pipeline (with Tier 4 + Wave 4)
+### Wave 5 (local corpus augmentation)
+
+| Enhancement | Effect | Gated by |
+|---|---|---|
+| **W5.1 · Local corpus** (`_search`) | `scripts/index_corpus.py` builds a `CorpusIndex` from a directory of PDFs / markdown / text / HTML. When `LOCAL_CORPUS_PATH` is set, each sub-query pulls `LOCAL_CORPUS_TOP_K` hits (default 5) from the index and merges them into evidence with `corpus://<source>#p<page>#c<chunk>` URLs. `_fetch_url` skips those URLs — their text is already the full chunk. | `LOCAL_CORPUS_PATH=""` (unset = web-only) |
+
+Build a corpus once, query it from CLI or attach it to the pipeline:
+
+```bash
+# build
+OPENAI_BASE_URL=http://localhost:11434/v1 OPENAI_API_KEY=ollama \
+EMBED_MODEL=nomic-embed-text \
+python scripts/index_corpus.py build ~/papers --out ~/papers.idx
+
+# query from CLI
+OPENAI_BASE_URL=http://localhost:11434/v1 OPENAI_API_KEY=ollama \
+EMBED_MODEL=nomic-embed-text \
+python scripts/index_corpus.py query ~/papers.idx "attention mechanism" --k 5
+
+# attach to production pipeline
+export LOCAL_CORPUS_PATH=~/papers.idx
+export LOCAL_CORPUS_TOP_K=5
+make run Q="your question"
+```
+
+### Pipeline (with Tier 4 + Wave 4 + Wave 5)
 
 ```
-classify → plan (+HyDE, +critic) → search (+critic) → retrieve (+W4.1 rerank)
-                                                              │
-                                               W4.2 fetch_url ┘
-                                                              │
-                                                              ▼
-                                                           compress
-                                                              │
-                                                              ▼
-                                                    synthesize (+FLARE)
-                                                              │
-                                                              ▼
-                                                      verify (CoVe)
-                                                              │
-                                          verified ──yes──▶ END
-                                                              │
-                                                              no
-                                                              │
-                                    iterate (re-search failed claims) ─▶ search
+classify → plan (+HyDE, +critic) → search (+W5 corpus, +critic) → retrieve (+W4.1 rerank)
+                                                                         │
+                                                          W4.2 fetch_url ┘
+                                                                         │
+                                                                         ▼
+                                                                      compress
+                                                                         │
+                                                                         ▼
+                                                                synthesize (+FLARE)
+                                                                         │
+                                                                         ▼
+                                                                  verify (CoVe)
+                                                                         │
+                                                     verified ──yes──▶ END
+                                                                         │
+                                                                         no
+                                                                         │
+                                               iterate (re-search failed claims) ─▶ search
 ```
 
 Compute scales with question difficulty: factoid questions exit the
@@ -111,6 +136,10 @@ export FETCH_TIMEOUT_SEC=10
 export FETCH_MAX_CHARS=8000     # truncate per page after extraction
 export FETCH_MAX_URLS=8         # cap concurrent fetches per cycle
 export ENABLE_TRACE=1           # W4.3 per-call observability, summary printed at CLI end
+
+# Wave 5 toggles (local corpus augmentation)
+export LOCAL_CORPUS_PATH=""     # W5.1 set to a directory built by scripts/index_corpus.py
+export LOCAL_CORPUS_TOP_K=5     # per-subquery hits pulled from the local corpus
 
 make install
 make run Q="your hard multi-hop research question"

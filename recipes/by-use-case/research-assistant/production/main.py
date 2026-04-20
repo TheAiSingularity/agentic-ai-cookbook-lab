@@ -68,6 +68,12 @@ Env vars (all defaults shown; most gates are 1=on):
   FETCH_MAX_URLS         8    cap concurrent fetches per retrieve cycle
   ENABLE_TRACE           1    W4.3 — record {node, model, latency_s, tokens_est}
                               per LLM call. Printed as a summary at CLI end.
+
+  # Wave 5 — local corpus augmentation
+  LOCAL_CORPUS_PATH      ""   W5.1 — directory produced by scripts/index_corpus.py.
+                              When set, `_search` augments SearXNG hits with the
+                              top-K local matches per sub-query. Unset = web-only.
+  LOCAL_CORPUS_TOP_K      5   per-subquery hits pulled from the local corpus.
 """
 
 import os
@@ -81,7 +87,7 @@ from typing import TypedDict
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
 import requests  # noqa: E402
-from core.rag import CrossEncoderReranker, HybridRetriever  # noqa: E402
+from core.rag import CorpusIndex, CrossEncoderReranker, HybridRetriever  # noqa: E402
 from langgraph.graph import END, StateGraph  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
@@ -119,6 +125,10 @@ FETCH_TIMEOUT_SEC = int(ENV("FETCH_TIMEOUT_SEC", "10"))
 FETCH_MAX_CHARS = int(ENV("FETCH_MAX_CHARS", "8000"))
 FETCH_MAX_URLS = int(ENV("FETCH_MAX_URLS", "8"))
 ENABLE_TRACE = ENV("ENABLE_TRACE", "1") == "1"  # W4.3
+
+# Wave 5 — local corpus augmentation.
+LOCAL_CORPUS_PATH = ENV("LOCAL_CORPUS_PATH", "")
+LOCAL_CORPUS_TOP_K = int(ENV("LOCAL_CORPUS_TOP_K", "5"))
 
 _NUMERIC_RE = re.compile(r"\b\d[\d,\.]*\b|\bhow many\b|\bwhen (was|did)\b|\bwhich year\b", re.IGNORECASE)
 _CITE_RE = re.compile(r"\[(\d+)\]")
@@ -304,11 +314,73 @@ def _search_one(sub: str) -> list[dict]:
     return [{"url": h["url"], "title": h["title"], "text": summary} for h in hits]
 
 
+# W5.1 — local corpus singleton, loaded lazily so process startup stays fast.
+_CORPUS: CorpusIndex | None = None
+_CORPUS_LOAD_FAILED = False
+
+
+def _get_corpus() -> CorpusIndex | None:
+    """Return the on-disk corpus if `LOCAL_CORPUS_PATH` is configured, else None.
+
+    Graceful: logs a warning and returns None on any load failure so the
+    pipeline keeps working with web-only search.
+    """
+    global _CORPUS, _CORPUS_LOAD_FAILED
+    if _CORPUS is not None or _CORPUS_LOAD_FAILED or not LOCAL_CORPUS_PATH:
+        return _CORPUS
+    try:
+        _CORPUS = CorpusIndex.load(LOCAL_CORPUS_PATH)
+        print(f"[corpus] loaded {len(_CORPUS.chunks)} chunks from {LOCAL_CORPUS_PATH}",
+              file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[corpus] load failed, falling back to web-only: {exc}", file=sys.stderr)
+        _CORPUS_LOAD_FAILED = True
+        return None
+    return _CORPUS
+
+
+def _corpus_hits(query: str, k: int = LOCAL_CORPUS_TOP_K) -> list[dict]:
+    """W5.1 — fetch top-k local-corpus hits for `query`, shaped like SearXNG hits.
+
+    Returns evidence items with `corpus://` URLs so fetch_url skips them and
+    citations remain traceable to their source file.
+    """
+    idx = _get_corpus()
+    if not idx:
+        return []
+    try:
+        hits = idx.query(query, k=k)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[corpus] query failed: {exc}", file=sys.stderr)
+        return []
+    out: list[dict] = []
+    for chunk, _ in hits:
+        loc = f"corpus://{chunk.source}"
+        if chunk.page is not None:
+            loc += f"#p{chunk.page}"
+        loc += f"#c{chunk.chunk_idx}"
+        title = chunk.source + (f" (p{chunk.page})" if chunk.page is not None else "")
+        out.append({"url": loc, "title": title, "text": chunk.text})
+    return out
+
+
 def _search(state: State) -> dict:
-    """Parallel search; dedupe by URL; append on iteration."""
+    """Parallel search; dedupe by URL; append on iteration.
+
+    When `LOCAL_CORPUS_PATH` is set, web hits are augmented with top-K local
+    matches per sub-query (W5.1). Local hits carry `corpus://` URLs so the
+    fetch_url node skips them — their text is already the full chunk.
+    """
     subs = state.get("unverified") or state["subqueries"]
     with ThreadPoolExecutor(max_workers=max(len(subs), 1)) as pool:
         new_items = [e for batch in pool.map(_search_one, subs) for e in batch]
+    # W5.1 — augment with local corpus results (if configured).
+    corpus_count = 0
+    if _get_corpus() is not None:
+        for sub in subs:
+            hits = _corpus_hits(sub)
+            new_items.extend(hits)
+            corpus_count += len(hits)
     existing = state.get("evidence", [])
     seen = {e["url"] for e in existing}
     evidence = existing + [e for e in new_items if e["url"] and e["url"] not in seen and not seen.add(e["url"])]
@@ -317,7 +389,12 @@ def _search(state: State) -> dict:
     if ENABLE_STEP_VERIFY and not state.get("unverified"):
         preview = "\n".join(f"[{i+1}] {e['title']}" for i, e in enumerate(evidence[:12]))
         _critic("search", preview, state["question"])  # side-effect only: logs concern
-    return {"evidence": evidence, "trace": _merge_trace(state, "search")}
+
+    extras: list[dict] | None = None
+    if corpus_count:
+        extras = [{"model": "corpus", "latency_s": 0.0, "tokens_est": 0,
+                   "n_hits": corpus_count, "n_subqueries": len(subs)}]
+    return {"evidence": evidence, "trace": _merge_trace(state, "search", extras)}
 
 
 # ── W4.1 · Retrieve with optional cross-encoder rerank ────────────────
@@ -379,7 +456,14 @@ def _retrieve(state: State) -> dict:
 # ── W4.2 · Fetch full page text ───────────────────────────────────────
 
 def _fetch_one(url: str) -> str | None:
-    """Download `url`, return clean article text (first FETCH_MAX_CHARS), or None."""
+    """Download `url`, return clean article text (first FETCH_MAX_CHARS), or None.
+
+    Local corpus URLs (`corpus://…`) are skipped — their text is already the
+    full chunk, and they're not fetchable over HTTP anyway. Returning None
+    makes `_fetch_url` keep the existing text and mark `fetched: False`.
+    """
+    if url.startswith("corpus://"):
+        return None
     try:
         import trafilatura  # type: ignore
     except ImportError:

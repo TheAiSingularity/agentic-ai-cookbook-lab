@@ -1,5 +1,27 @@
 # Progress Journal
 
+## 2026-04-20 (Wave 5) — local corpus indexing + rerank verified live
+
+After Wave 4 shipped with three local-first engine enhancements (rerank wired, trafilatura fetch, observability trace), the research pipeline still couldn't read the user's own documents — a significant gap for serious research use. Wave 5 closes that, and along the way verified the rerank stage end-to-end against the real `bge-reranker-v2-m3` model.
+
+**End-to-end efficiency verification** before Wave 5 code started. Three research scenarios (factoid / multi-hop comparison / synthesis) run through the full Wave 4 pipeline on Mac with Ollama `gemma4:e2b` + SearXNG + trafilatura + trace. Wall clock 94-173 s. In all three, CoVe verification produced a verified claims list (3/3, 2/2, 5/5) and iterative retrieval fired once. FLARE visible in the factoid case (extra search call on a hedged first draft). Trace summary revealed the LLM dominates 99% of time; Wave 4 plumbing (retrieve + fetch + trace) adds 1-3 s combined. **Bottleneck is the local 2B model, not the framework.** On GPU VM with Qwen3.6-35B-A3B this should be 3-10× faster without code changes.
+
+**Scenario B re-run with `ENABLE_RERANK=1`** to verify the rerank integration end-to-end: model downloaded (~560 MB from HuggingFace, one-time), loaded in ~20 s, per-call inference ~1-2 s. Wall clock 208 s vs 152 s without rerank — delta is the one-time download + loading, not a steady-state tax. Subsequent runs use the cached model and the cold-load disappears. `gemma4:e2b` produced an off-topic answer on this particular run, but that's a small-model quality issue, not a rerank bug — the reranker integration (lazy load, graceful fallback, rank merge) all behaved correctly.
+
+**Wave 5 shipped:**
+
+- **`core/rag/python/corpus.py`** — `CorpusIndex`, a persistable `HybridRetriever` with source-tracked chunks. Readers for `.pdf` (pypdf), `.md/.markdown/.txt` (raw), `.html/.htm` (trafilatura). Paragraph-aware character-window chunker with configurable overlap. Disk format is `manifest.json` (human-readable) + `index.pkl` (state dict); BM25 is rebuilt at load time. `CorpusChunk` dataclass tracks source path, page, chunk index.
+- **`scripts/index_corpus.py`** — CLI with `build`, `info`, `query` subcommands. Honors `OPENAI_BASE_URL` + `EMBED_MODEL` so embeddings use whatever portable stack you've configured (Ollama nomic-embed-text on Mac; OpenAI text-embedding-3-small on cloud).
+- **Production pipeline integration.** `LOCAL_CORPUS_PATH` env var triggers a lazy, cached load on first `_search` call. Each sub-query pulls `LOCAL_CORPUS_TOP_K` hits (default 5). Corpus hits are shaped as evidence items with `corpus://<source>#p<page>#c<chunk>` URLs; `_fetch_url` now detects that scheme and returns None so the full chunk text passes through unchanged. Trace records the augmentation under `model: "corpus"`.
+- **Fail-soft.** Load failure caches `_CORPUS_LOAD_FAILED=True` so we don't hammer the file system on every query; query failure logs and returns []; corrupt index never blocks web search.
+- **Live Mac smoke** — built a 239-chunk index from 5 repo markdown files in ~1 s via Ollama `nomic-embed-text`. CLI query `"cross-encoder reranker"` returned the correct chunks from `techniques.md`, `progress.md`, `paper-draft.md`. Production pipeline with `LOCAL_CORPUS_PATH` set: direct `_search` call returned 5 web hits + 3 corpus hits; `_fetch_url` skipped all 3 corpus URLs (corpus_fetched=0, web_fetched=5).
+
+**Tests: 114 → 135 green.** 13 new corpus tests (chunking invariants, mixed-format indexing, persistence round-trip, broken-file skipping, stable chunk IDs across rebuilds, empty-dir and non-dir error paths) plus 8 new pipeline-integration tests (corpus URL shaping with/without pages, load-failure caching, `_search` merge with trace entry, `_fetch_url` skip behavior, uncon­figured path passthrough). All mocked — zero network, zero API keys.
+
+**Dependencies:** `pypdf>=4.0.0` added to `production/requirements.txt`.
+
+**Docs updated:** `docs/progress.md` — current-state table now Wave 5 with 135 tests and corpus row; added a Wave 5 section documenting both the corpus feature and the live rerank verification; open-work list pruned (corpus item done, contextualize moved to "next"). `production/README.md` — Wave 5 table + CLI usage + updated pipeline diagram showing `search (+W5 corpus)`. `DEC-011` logged.
+
 ## 2026-04-20 (Wave 4) — research-assistant local-first engine enhancements
 
 Three local-first enhancements layered onto the production research pipeline. Goal was to close the gaps called out in `docs/progress.md`'s "Open work" list without introducing any new paid API dependency. All three are env-gated and ship with safe defaults.
