@@ -453,6 +453,8 @@ CI runs on every push / PR touching engine / core / recipes — see
 | TUI shows gibberish over SSH | terminal too narrow | resize to ≥ 100 cols; Textual needs space for the 3-pane layout |
 | Web GUI shows `Invalid memory mode` | malformed POST | use the form UI; values validated against `off/session/persistent` |
 | Streaming cuts off mid-answer | flaky backend | re-run; batched fallback kicks in on next attempt. Set `ENABLE_STREAM=0` if it persists |
+| `zsh: command not found: twine` (or similar) after `uv pip install <pkg>` | uv's venv isn't auto-activated by your shell | use `.venv/bin/<cmd> …`, `uv run <cmd> …`, or `source .venv/bin/activate` before running |
+| `bad interpreter: .../python3: no such file or directory` after moving or renaming the repo dir | venv shebangs are absolute paths tied to the dir the venv was created in | recreate: `rm -rf .venv && uv venv && uv pip install -e .` (or re-install whatever you had) |
 | `make test` says 0 tests collected | wrong CWD | run from the `engine/` dir or set `PYTHONPATH` |
 | Claude Desktop doesn't see the plugin | plugin.json in wrong path | `/plugin marketplace add <absolute-path-to>/engine/mcp/claude_plugin` |
 
