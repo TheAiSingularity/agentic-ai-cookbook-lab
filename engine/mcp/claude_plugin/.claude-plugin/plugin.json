@@ -1,7 +1,7 @@
 {
   "name": "agentic-research",
   "displayName": "Agentic Research — local, verified, open-source",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Research agent that verifies its own answers with full source citations, optional local corpus, and zero cloud dependency. Runs on Gemma 3 4B via Ollama or any OpenAI-compatible endpoint. Every LLM call, source, and verification decision is visible. No telemetry.",
   "homepage": "https://github.com/TheAiSingularity/agentic-research-engine-oss",
   "repository": "https://github.com/TheAiSingularity/agentic-research-engine-oss",

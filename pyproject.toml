@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentic-research-engine"
-version = "0.1.1"
+version = "0.1.2"
 description = "The best $0 research agent that runs on a laptop — local-first, CoVe-verified, with CLI / TUI / Web GUI + MCP server + Claude plugin."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -7,6 +7,7 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.2 — MCP registry ownership proof](#012--mcp-registry-ownership-proof-2026-04-21)
 - [0.1.1 — packaging + marketplaces](#011--packaging--marketplaces-2026-04-21)
 - [0.1.0 — public alpha](#010--public-alpha-2026-04-21)
 - [Pre-0.1 wave history](#pre-01-wave-history)
@@ -18,6 +19,38 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 Work-in-progress on `main` between releases. Nothing here yet.
+
+---
+
+## [0.1.2] — MCP registry ownership proof — 2026-04-21
+
+Hotfix for the `mcp-publisher publish` validation. The registry
+requires an **ownership marker** in the PyPI package's README to
+prove the PyPI package and the MCP-registry entry are controlled by
+the same owner.
+
+### Fixed
+
+- **Added the `mcp-name: io.github.TheAiSingularity/agentic-research`
+  marker** to `README.md` in a new "MCP registry ownership" footer
+  section. This is the literal string the registry validator scans
+  for in the PyPI-hosted README.
+- **Bumped all version strings from 0.1.1 → 0.1.2** (pyproject.toml,
+  engine/__init__.py, server.json ×2, plugin.json) since PyPI does
+  not permit re-uploading the same version even after a yank.
+
+### Why this is a version bump
+
+PyPI is append-only per version. A yank hides a version but doesn't
+free the filename. The README change has to land inside a new version's
+sdist/wheel, which means a new version number. The actual pipeline
+and feature surface are identical to 0.1.1.
+
+### Install
+
+```bash
+pip install --upgrade agentic-research-engine   # → 0.1.2
+```
 
 ---
 

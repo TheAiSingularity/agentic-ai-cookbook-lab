@@ -5,7 +5,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/pypi/v/agentic-research-engine?color=blue&label=pypi" alt="PyPI">
-  <img src="https://img.shields.io/badge/version-0.1.1--alpha-orange.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.1.2--alpha-orange.svg" alt="Version">
   <img src="https://img.shields.io/badge/default-gemma%203%204B%20local-green.svg" alt="Default">
   <img src="https://img.shields.io/badge/tests-229%2F229-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/interfaces-CLI%20%7C%20TUI%20%7C%20web-blue.svg" alt="Interfaces">
@@ -504,3 +504,14 @@ MIT. See [`LICENSE`](LICENSE).
 - [HermesClaw](https://github.com/TheAiSingularity/hermesclaw) — the secure runtime these recipes can run inside
 - [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) — kernel-level agent sandbox
 - [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) — self-improving agent (whose `agentskills.io` skill format we interoperate with)
+
+---
+
+### MCP registry ownership
+
+This PyPI package is the official source of the MCP server registered at
+<https://registry.modelcontextprotocol.io>. The line below is the
+ownership marker the registry validates — **do not remove** when
+editing this README.
+
+mcp-name: io.github.TheAiSingularity/agentic-research

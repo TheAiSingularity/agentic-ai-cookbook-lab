@@ -17,4 +17,4 @@ Quickstart:
     result = graph.invoke({"question": "…", "iterations": 0, "plan_rejects": 0, "trace": []})
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
