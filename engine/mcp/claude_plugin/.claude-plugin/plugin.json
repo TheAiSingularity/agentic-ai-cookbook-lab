@@ -1,0 +1,41 @@
+{
+  "name": "agentic-research",
+  "displayName": "Agentic Research — local, verified, open-source",
+  "version": "0.1.0",
+  "description": "Research agent that verifies its own answers with full source citations, optional local corpus, and zero cloud dependency. Runs on Gemma 3 4B via Ollama or any OpenAI-compatible endpoint. Every LLM call, source, and verification decision is visible. No telemetry.",
+  "homepage": "https://github.com/TheAiSingularity/agentic-ai-cookbook-lab",
+  "repository": "https://github.com/TheAiSingularity/agentic-ai-cookbook-lab",
+  "author": {
+    "name": "TheAiSingularity"
+  },
+  "license": "MIT",
+  "keywords": [
+    "research", "rag", "local", "ollama", "searxng", "verification",
+    "cove", "citations", "agentic", "open-source", "mcp"
+  ],
+  "skills": [
+    "skills/research.md",
+    "skills/cite-sources.md",
+    "skills/verify-claim.md",
+    "skills/set-domain.md"
+  ],
+  "mcpServers": {
+    "engine": {
+      "command": "python",
+      "args": ["-m", "engine.mcp.server"],
+      "env": {
+        "OPENAI_BASE_URL": "http://localhost:11434/v1",
+        "OPENAI_API_KEY": "ollama",
+        "MODEL_PLANNER": "gemma3:4b",
+        "MODEL_SEARCHER": "gemma3:4b",
+        "MODEL_SYNTHESIZER": "gemma3:4b",
+        "MODEL_VERIFIER": "gemma3:4b",
+        "MODEL_CRITIC": "gemma3:4b",
+        "MODEL_ROUTER": "gemma3:4b",
+        "MODEL_COMPRESSOR": "gemma3:4b",
+        "EMBED_MODEL": "nomic-embed-text",
+        "SEARXNG_URL": "http://localhost:8888"
+      }
+    }
+  }
+}
