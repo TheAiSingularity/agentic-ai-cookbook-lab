@@ -74,7 +74,30 @@ Thanks!
 
 ---
 
-## claudeskills.info — manual skill submission
+## claudeskills.info — SKIPPED
+
+**Status (2026-04-21):** skipped. The submission form rejected our repo
+with a generic "Failed to create submission" error — most likely because
+their validator expects a **dedicated single-skill repo** (placeholder
+URL convention `username/skill-name` singular) rather than a large repo
+with skills nested inside. Fixing would require either (a) spinning up
+a second standalone repo mirroring just the skill, or (b) waiting for
+their submission endpoint to surface a clearer error.
+
+Neither was worth the return given that the same standalone skill is
+already discoverable via:
+
+- GitHub search on our main repo (`skills/verify-answer/SKILL.md`)
+- The organic traffic from the full-engine listings on mcp.so, glama.ai,
+  and the official MCP registry
+
+If a future contributor wants to re-attempt, Plan B is:
+
+1. `gh repo create TheAiSingularity/verify-answer-skill --public`
+2. Copy `skills/verify-answer/SKILL.md` + `LICENSE` to the new repo's root
+3. Submit that repo URL at <https://claudeskills.info/submit>
+
+## claudeskills.info (legacy submission notes)
 
 **What it is:** Community directory for Claude skills (single-purpose `SKILL.md` files, not full plugins). ~650 skills indexed.
 
@@ -145,4 +168,4 @@ Both pull from the official MCP registry on a schedule. Same situation as Glama:
 | glama.ai/mcp/servers | ⏳ awaiting registry sync | wait 24h |
 | mcp.so | ⏳ awaiting registry sync | wait 24h |
 | pulsemcp.com | ⏳ awaiting registry sync | wait 24h |
-| claudeskills.info | 🟡 ready to submit (manual) | paste the `verify-answer` skill via their submit form or PR |
+| claudeskills.info | ⏭️ skipped (their validator rejected our multi-purpose repo; Plan B notes in section above) | — |
