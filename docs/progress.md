@@ -7,23 +7,32 @@ see [`paper-draft.md`](paper-draft.md).
 
 ---
 
-## Current state (through Wave 8)
+## Current state (through Engine Master Plan Phase 8)
+
+After Wave 8's cookbook pivot, the repo transformed into an
+**engine-centric local research platform**. The master plan (see
+[`research-engine-master-plan.md`](../.project/plans/research-engine-master-plan.md))
+tracks Phases 0-9; Phases 0-8 are shipped, Phase 9 (rebrand + public
+launch) is **prepared but intentionally held** until user greenlight.
 
 | | |
 |---|---|
-| Recipes live | **research-assistant** (beginner + production + eval) · **trading-copilot** (beginner + production + eval) · **document-qa** (beginner) |
-| Case-study recipe | **rust-mcp-search-tool** |
+| Flagship | `engine/` — 8-node LangGraph pipeline + memory + compaction + 3 interfaces + MCP + plugin loader |
+| Recipes (archived, still work) | research-assistant, trading-copilot, document-qa, rust-mcp-search-tool |
 | Core shared library | `core/rag/` v1 — `HybridRetriever` · `CrossEncoderReranker` · `contextualize_chunks` · `CorpusIndex` |
-| Tests | **159/159 green**, all mocked (no network / no API keys) |
+| Tests | **228+ green**, all mocked (no network / no API keys) |
+| Default Mac model | `gemma3:4b` (3.3 GB via Ollama) — measured 40% faster + more nuanced vs `gemma4:e2b` baseline |
 | Portable stack | OpenAI · Ollama · vLLM · SGLang — one env var (`OPENAI_BASE_URL`) |
 | Search | Self-hosted **SearXNG** (Docker) — no paid API |
-| Full-page fetch | **trafilatura** — self-hosted clean-text article extraction |
-| Reranking | **BAAI/bge-reranker-v2-m3** via `sentence-transformers` — Apache-2.0, local |
-| Local corpus | `scripts/index_corpus.py` — PDFs / markdown / text / HTML → `CorpusIndex`; queryable CLI + auto-merged into production pipeline via `LOCAL_CORPUS_PATH` |
-| Small-model hardening | Three-case synthesize prompt (full / partial / refuse) + per-chunk char cap + auto-TopK heuristic for Ollama-class models — eliminates the hallucination failure modes observed on `gemma4:e2b` |
-| Streaming UX | Synthesize tokens stream to stdout live; falls back to batched on backends that don't support streaming |
+| Interfaces | CLI · Textual TUI · FastAPI + HTMX Web GUI (all three shipped) |
+| Memory | SQLite trajectory log at `~/.agentic-research/memory.db` + semantic retrieval (off/session/persistent) |
+| Compaction | Context-window compactor preserving CoVe-verified URLs |
+| Domain presets | 6 shipped (general/medical/papers/financial/stock_trading/personal_docs) |
+| Plugin/skill loader | Claude plugins + Hermes skills; gh / file / url sources; forbidden-symbols scan |
+| MCP | Python FastMCP server (`research`, `reset_memory`, `memory_count`) + Claude plugin bundle (4 skills) |
+| Benchmark harness | `engine/benchmarks/runner.py` + `simpleqa_mini.jsonl` (20) + `browsecomp_mini.jsonl` (10) |
 | Observability | Per-call trace (node, model, latency, tokens) — no SaaS |
-| Repo visibility | **Public** |
+| Repo visibility | **Private** (held for Phase 9 go-live) |
 | License | MIT |
 
 ---
@@ -60,6 +69,29 @@ Second flagship recipe in one session. Beginner + production + eval harness + ba
 - Eval: pandas-only backtest scorer with signal precision/recall, sample_window.yaml (6 months × 3 tickers).
 - Safety: build-time forbidden-symbols tests fail if anyone adds execution semantics (`place_order` / `alpaca` / `ib_insync` / etc.).
 - [DEC-009](../.project/decisions.md) documents techniques we deliberately skipped from research-assistant (HyDE, FLARE, compression, plan refinement, classifier router) because they don't transfer to structured-data monitoring.
+
+### Engine Master Plan — Phases 0 → 8 (2026-04-20 / 04-21)
+
+Strategic pivot of the whole repo from "SOTA cookbook of recipes" to
+"flagship local research engine." Master plan in
+[`.project/plans/research-engine-master-plan.md`](../.project/plans/research-engine-master-plan.md).
+
+| phase | delivered |
+|---|---|
+| **0 — Hygiene** | Flipped repo private, baseline 159/159 tests confirmed, plan copied into repo, established "no Co-Authored-By" commit convention |
+| **1 — Engine core extraction** | Split 826-LOC production/main.py into `engine/core/{pipeline,models,trace}.py`; `production/main.py` became a thin shim. Live Gemma 3 4B characterization: **44s wall on Scenario A vs 78s on gemma4:e2b** (40% faster, more nuanced answer). Tests: 159 → 184. |
+| **2 — Memory + compaction** | `engine/core/memory.py` (SQLite trajectory log + semantic retrieval, 3 modes) + `engine/core/compaction.py` (preserves CoVe-verified URLs). 25 new tests. |
+| **3 — Three interfaces** | CLI + Textual TUI + FastAPI + HTMX Web GUI, all sharing `engine/interfaces/common.py`. 13 new tests. |
+| **4 — MCP + Claude plugin** | Python FastMCP server with `research` / `reset_memory` / `memory_count`; submittable Claude plugin bundle with 4 skills. 5 new tests. |
+| **5 — Plugin/skill loader** | Disk-backed registry under `~/.agentic-research/plugins/`, supports `gh:`, `file:`, `https://` sources; Claude plugin + Hermes skill formats; safety scan on install. 27 new tests. |
+| **6 — Domain presets + 5 examples** | Hand-rolled YAML parser, `DomainPreset` loader, 6 shipped presets (general / medical / papers / financial / stock_trading / personal_docs), 5 worked examples with expected outputs. 16 new tests. |
+| **7 — Docs + contributor guide** | Rewritten `CONTRIBUTING.md`, new `docs/architecture.md`, `docs/plugins-skills.md`, `docs/domains.md`, `docs/self-learning.md`. Issue + PR templates. `CODE_OF_CONDUCT.md`. Root README pivoted to engine-centric. |
+| **8 — Benchmark harness** | `engine/benchmarks/runner.py` with `must_contain` / `must_not_contain` scoring + ablation flags (rerank / no-fetch / no-compress / no-verify / no-flare / no-router). Shipped fixtures: 20-question SimpleQA-mini + 10-question BrowseComp-mini. 13 new tests. |
+| **9 — Rebrand + public launch** | **HELD**. Launch copy drafted (`docs/launch-copy.md`), go-live checklist written (`docs/launch-checklist.md`). Repo stays private until user greenlights the flip. |
+
+Total net impact: repo-wide tests **159 → 228+** green; engine gained
+~5000 LOC across core + interfaces + MCP + benchmarks; 8 new docs
+pages; full 3-interface + MCP + plugin story end-to-end.
 
 ### Wave 8 — document-qa recipe (third flagship, corpus-only)
 
@@ -221,7 +253,16 @@ agentic-ai-cookbook-lab/
 
 ## Recent commits (tip-down)
 
-- `(pending)` Wave 8: document-qa recipe (3rd flagship, corpus-only 4-node pipeline)
+- `037871b` Phase 8: mini-benchmark harness + fixtures
+- `7d4185c` Phase 7: docs + contributor guide rewrite
+- `a4e8641` Phase 6: domain presets + 5 worked examples
+- `1e371e6` Phase 5: plugin + skill loader (Claude + Hermes formats)
+- `292b85f` Phase 4: MCP server + Claude plugin bundle
+- `13f38c6` Phase 3: CLI + TUI + Web GUI (three interfaces in parallel)
+- `15ffc16` Phase 2: memory persistence + context compaction
+- `a67cff5` Phase 1: engine.core extracted; Gemma 3 4B beats e2b baseline
+- `37a4108` Phase 0: master plan for SOTA local research engine
+- `cdc3d4c` Wave 8: document-qa recipe (3rd flagship, corpus-only 4-node pipeline)
 - `ace5e2e` Wave 7: streaming synthesis (tokens to stdout as they generate)
 - `563e862` Wave 6: small-model hardening (anti-hallucination + caps + auto-topK)
 - `af0a09b` docs: root README refreshed for Wave 5; defensive gitignore patterns
