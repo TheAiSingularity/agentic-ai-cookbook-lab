@@ -1,0 +1,69 @@
+<section class="result-grid">
+  <div class="answer-pane">
+    <h2>Answer</h2>
+    <p class="q">Q: {{ result.question }}</p>
+    <p class="class-tag">class: <code>{{ result.question_class or "?" }}</code></p>
+    <div class="answer">{{ result.answer }}</div>
+
+    <h3>Hallucination check — {{ verified_summary }}</h3>
+    <ul class="claims">
+      {% for c in result.verified_claims %}
+        <li class="verified">✓ {{ c.text }}</li>
+      {% endfor %}
+      {% for c in result.unverified_claims %}
+        <li class="unverified">✗ {{ c }}</li>
+      {% endfor %}
+      {% if not result.verified_claims and not result.unverified_claims %}
+        <li class="none">(no CoVe claims emitted)</li>
+      {% endif %}
+    </ul>
+  </div>
+
+  <div class="sources-pane">
+    <h2>Sources ({{ sources|length }})</h2>
+    <ol class="sources">
+      {% for s in sources %}
+        <li>
+          <span class="fetch-mark">{{ "●" if s.fetched else "○" }}</span>
+          <a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>
+          {% if s.preview %}<div class="preview">{{ s.preview }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <div class="trace-pane">
+    <h2>Trace</h2>
+    <table class="trace">
+      <thead><tr><th>node</th><th>calls</th><th>latency</th><th>tokens</th></tr></thead>
+      <tbody>
+        {% for r in trace_rows %}
+          <tr>
+            <td><code>{{ r.node }}</code></td>
+            <td>{{ r.calls }}</td>
+            <td>{{ "%.2f"|format(r.latency_s) }}s</td>
+            <td>~{{ r.tokens_est }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="totals">
+      total <b>{{ "%.2f"|format(result.total_latency_s) }}s</b> ·
+      ~{{ result.total_tokens_est }} tokens ·
+      iterations {{ result.iterations }}
+    </p>
+
+    {% if result.memory_hits %}
+      <h3>Memory hits</h3>
+      <ul class="memory">
+        {% for h in result.memory_hits %}
+          <li>
+            <span class="score">({{ "%.2f"|format(h.score) }})</span>
+            <span class="prior-q">{{ h.question }}</span>
+            <div class="prior-a">→ {{ h.answer[:140] }}{% if h.answer|length > 140 %}…{% endif %}</div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+</section>

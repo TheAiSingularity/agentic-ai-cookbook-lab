@@ -1,0 +1,164 @@
+/* engine web GUI — minimal, dark, local. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Segoe UI, Roboto, sans-serif;
+  background: #0f1115;
+  color: #e6e8ea;
+  line-height: 1.55;
+}
+
+header {
+  padding: 1.2rem 2rem;
+  border-bottom: 1px solid #1f2330;
+}
+header .brand h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  display: inline-block;
+  color: #f0e9d2;
+}
+header .tagline {
+  margin-left: 0.8rem;
+  color: #7a8190;
+  font-size: 0.9rem;
+}
+
+main {
+  max-width: 1320px;
+  margin: 1.5rem auto;
+  padding: 0 1.5rem;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 0.9rem 1rem;
+  font-family: inherit;
+  font-size: 1rem;
+  background: #161a22;
+  color: #e6e8ea;
+  border: 1px solid #2a2f3e;
+  border-radius: 6px;
+  resize: vertical;
+}
+textarea:focus { outline: 2px solid #6aa3ff; border-color: transparent; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: #9aa0ae;
+  font-size: 0.85rem;
+}
+select {
+  background: #1a1f2c;
+  color: #e6e8ea;
+  border: 1px solid #2a2f3e;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  min-width: 110px;
+}
+button {
+  padding: 0.55rem 1.1rem;
+  border-radius: 5px;
+  border: 1px solid #2a2f3e;
+  background: #1a1f2c;
+  color: #e6e8ea;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+button.primary { background: #2b4ee3; border-color: #2b4ee3; }
+button.primary:hover { background: #3a5cef; }
+button:not(.primary):hover { border-color: #4a5566; }
+
+/* Results grid */
+.result-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.result-grid > div {
+  background: #141824;
+  border: 1px solid #1f2330;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+.result-grid h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+  color: #cad2e1;
+  border-bottom: 1px solid #1f2330;
+  padding-bottom: 0.4rem;
+}
+.result-grid h3 {
+  font-size: 0.95rem;
+  color: #9fd689;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+
+.q { color: #9aa0ae; font-size: 0.9rem; }
+.class-tag { color: #7a8190; font-size: 0.8rem; }
+.class-tag code { background: #1f2330; padding: 0 0.4rem; border-radius: 3px; }
+.answer { white-space: pre-wrap; margin-top: 0.8rem; font-size: 0.98rem; }
+
+.claims { list-style: none; padding: 0; margin: 0.4rem 0 0 0; }
+.claims li { padding: 0.25rem 0; font-size: 0.9rem; }
+.claims .verified { color: #9fd689; }
+.claims .unverified { color: #ff7b72; }
+.claims .none { color: #7a8190; font-style: italic; }
+
+.sources { list-style: decimal; padding-left: 1.4rem; margin: 0; }
+.sources li { margin-bottom: 0.7rem; font-size: 0.92rem; }
+.sources a { color: #6aa3ff; text-decoration: none; }
+.sources a:hover { text-decoration: underline; }
+.fetch-mark { color: #9fd689; margin-right: 0.3rem; font-size: 0.8rem; }
+.preview { color: #9aa0ae; font-size: 0.85rem; margin-top: 0.2rem; }
+
+.trace { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.trace th { text-align: left; color: #9aa0ae; font-weight: normal; padding: 0.25rem; border-bottom: 1px solid #1f2330; }
+.trace td { padding: 0.2rem 0.25rem; }
+.trace code { color: #f0e9d2; background: #1f2330; padding: 0 0.3rem; border-radius: 3px; }
+.totals { color: #9aa0ae; font-size: 0.85rem; margin-top: 0.8rem; }
+
+.memory { list-style: none; padding: 0; margin: 0.4rem 0 0 0; font-size: 0.87rem; }
+.memory li { padding: 0.35rem 0; border-bottom: 1px solid #1a1f2c; }
+.memory .score { color: #7a8190; }
+.memory .prior-a { color: #9aa0ae; font-size: 0.82rem; margin-top: 0.2rem; }
+
+.err {
+  background: #2b1618;
+  color: #ff7b72;
+  padding: 0.8rem 1rem;
+  border-radius: 5px;
+  border: 1px solid #4a2a2e;
+}
+
+footer {
+  text-align: center;
+  color: #7a8190;
+  font-size: 0.85rem;
+  padding: 2rem 0 1rem;
+}
+footer a { color: #6aa3ff; text-decoration: none; }
+
+@media (max-width: 980px) {
+  .result-grid { grid-template-columns: 1fr; }
+}

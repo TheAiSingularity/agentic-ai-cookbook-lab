@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>engine — local research</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>engine</h1>
+      <span class="tagline">local research · $0 per query · v{{ version }}</span>
+    </div>
+  </header>
+
+  <main>
+    <form id="ask-form" hx-post="/ask" hx-target="#result" hx-swap="innerHTML">
+      <textarea name="question" id="question"
+                placeholder="Ask a research question. Example: What is Anthropic's contextual retrieval and why does it reduce retrieval failures?"
+                required></textarea>
+      <div class="controls">
+        <label>
+          Domain
+          <select name="domain">
+            <option value="general">general</option>
+            <option value="medical">medical</option>
+            <option value="papers">papers</option>
+            <option value="financial">financial</option>
+            <option value="stock_trading">stock_trading</option>
+            <option value="personal_docs">personal_docs</option>
+          </select>
+        </label>
+        <label>
+          Memory
+          <select name="memory">
+            <option value="off">off</option>
+            <option value="session" selected>session</option>
+            <option value="persistent">persistent</option>
+          </select>
+        </label>
+        <button type="submit" class="primary">Ask</button>
+        <button type="button" hx-post="/memory/reset" hx-swap="none"
+                hx-confirm="Wipe all persistent trajectories?">Reset memory</button>
+      </div>
+    </form>
+
+    <div id="result"></div>
+  </main>
+
+  <footer>
+    <p>
+      Private by default · No telemetry ·
+      <a href="https://github.com/TheAiSingularity/agentic-ai-cookbook-lab">GitHub</a>
+    </p>
+  </footer>
+</body>
+</html>
