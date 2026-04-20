@@ -7,21 +7,22 @@ see [`paper-draft.md`](paper-draft.md).
 
 ---
 
-## Current state (Wave 5 shipped)
+## Current state (Wave 6 shipped)
 
 | | |
 |---|---|
 | Recipes live | **research-assistant** (beginner + production + eval) · **trading-copilot** (beginner + production + eval) |
 | Case-study recipe | **rust-mcp-search-tool** |
 | Core shared library | `core/rag/` v1 — `HybridRetriever` · `CrossEncoderReranker` · `contextualize_chunks` · `CorpusIndex` |
-| Tests | **135/135 green**, all mocked (no network / no API keys) |
+| Tests | **143/143 green**, all mocked (no network / no API keys) |
 | Portable stack | OpenAI · Ollama · vLLM · SGLang — one env var (`OPENAI_BASE_URL`) |
 | Search | Self-hosted **SearXNG** (Docker) — no paid API |
 | Full-page fetch | **trafilatura** — self-hosted clean-text article extraction |
 | Reranking | **BAAI/bge-reranker-v2-m3** via `sentence-transformers` — Apache-2.0, local |
 | Local corpus | `scripts/index_corpus.py` — PDFs / markdown / text / HTML → `CorpusIndex`; queryable CLI + auto-merged into production pipeline via `LOCAL_CORPUS_PATH` |
+| Small-model hardening | Three-case synthesize prompt (full / partial / refuse) + per-chunk char cap + auto-TopK heuristic for Ollama-class models — eliminates the hallucination failure modes observed on `gemma4:e2b` |
 | Observability | Per-call trace (node, model, latency, tokens) — no SaaS |
-| Repo visibility | Private |
+| Repo visibility | **Public** |
 | License | MIT |
 
 ---
@@ -58,6 +59,27 @@ Second flagship recipe in one session. Beginner + production + eval harness + ba
 - Eval: pandas-only backtest scorer with signal precision/recall, sample_window.yaml (6 months × 3 tickers).
 - Safety: build-time forbidden-symbols tests fail if anyone adds execution semantics (`place_order` / `alpaca` / `ib_insync` / etc.).
 - [DEC-009](../.project/decisions.md) documents techniques we deliberately skipped from research-assistant (HyDE, FLARE, compression, plan refinement, classifier router) because they don't transfer to structured-data monitoring.
+
+### Wave 6 — small-model hardening (anti-hallucination for gemma4:e2b-class inference)
+
+End-to-end testing on Mac with the 2 B local model exposed three hallucination failure modes when the synthesizer got large evidence contexts: off-topic essays, topic-substitution, and plausible-sounding partial answers that missed the actual question. Wave 6 addresses all three with prompting + caps + an auto-TopK heuristic, each env-gated.
+
+| Measure | What it does | Default |
+|---|---|---|
+| **W6.1 · Refined synthesize prompt** | Three-case rule: `FULL answer` / `partial answer + named gaps` / `UNRELATED → refuse exactly`. Explicit "never invent" + "never substitute a related topic". Refined through two iterations — first binary version caused false refusals on partial-evidence questions. | always-on |
+| **W6.2 · Per-chunk char cap** (`PER_CHUNK_CHAR_CAP`) | After compress, every evidence chunk is hard-truncated regardless of whether compress ran. Bounds the synthesize prompt even when the compressor fails or is disabled. | 1200 chars |
+| **W6.3 · Auto-TopK heuristic** (`SMALL_MODEL_TOPK`) | When `MODEL_SYNTHESIZER` matches `:e2b` / `:2b` / `:3b` / `-2b` / `nano`, reduce `TOP_K_EVIDENCE` from 8 → 5. Explicit `TOP_K_EVIDENCE` overrides. Does NOT match `mini` (gpt-5-mini / gpt-4o-mini are cloud-hosted and fine). | auto-detect |
+
+**Live re-run results on Mac gemma4:e2b (same SearXNG + trafilatura + trace as Wave 4):**
+
+| Scenario | Baseline (Wave 4) | After Wave 6 |
+|---|---|---|
+| A · factoid (Anthropic CR year + %) | partial: year unspecified + 49%/35% cited · 94.7 s | **"September 2024 [5] … 67% reduction [1][2][3]" · 78 s** |
+| B · multi-hop (Anthropic CR vs bge-reranker) | rambling essay on reranker side only · 152 s | **Clean refusal: "evidence does not answer this question" · 229 s** |
+| C · synthesis (MiroThinker + OpenResearcher) | generic essay · 140 s | **Partial answer on techniques with [1][3] citations + explicit "evidence does not provide information on verification" · 176 s** |
+| B + rerank | off-topic logarithm essay · 208 s | **Clean refusal · 306 s** |
+
+No hallucinations across any of the four scenarios. Factoid gives direct answers. Partial-evidence questions give structured partial answers that name the gaps. Unrelated evidence triggers clean refusals. Tests: 135 → **143 green** (8 new W6 cases).
 
 ### Wave 5 — local corpus indexing + rerank verified live
 
@@ -177,7 +199,9 @@ agentic-ai-cookbook-lab/
 
 ## Recent commits (tip-down)
 
-- `(pending)` Wave 5: local corpus indexing (`CorpusIndex` + `scripts/index_corpus.py` + `LOCAL_CORPUS_PATH` integration)
+- `(pending)` Wave 6: small-model hardening (anti-hallucination prompt + per-chunk caps + auto-TopK)
+- `af0a09b` docs: root README refreshed for Wave 5; defensive gitignore patterns
+- `d8af86a` Wave 5: local corpus indexing (`CorpusIndex` + `scripts/index_corpus.py` + `LOCAL_CORPUS_PATH` integration)
 - `4f27c03` Wave 4: local-first engine enhancements (rerank + fetch_url + trace)
 - `2d28e74` Wave 3: trading-copilot recipe end-to-end (beginner + production + eval)
 - `8ac5ad6` Drop youtube-analyzer; rewrite stale READMEs to match Wave 2 Tier 4

@@ -74,6 +74,16 @@ Env vars (all defaults shown; most gates are 1=on):
                               When set, `_search` augments SearXNG hits with the
                               top-K local matches per sub-query. Unset = web-only.
   LOCAL_CORPUS_TOP_K      5   per-subquery hits pulled from the local corpus.
+
+  # Wave 6 — small-model hardening (target: gemma4:e2b-class models that
+  # otherwise hallucinate when fed ~19k-token evidence prompts)
+  PER_CHUNK_CHAR_CAP  1200    hard cap on evidence chunk text before synthesize.
+                              Trims runaway full-page fetches that overflow the
+                              synthesizer's reliable context. Applied after compress.
+  SMALL_MODEL_TOPK       5    TOP_K_EVIDENCE override auto-applied when
+                              MODEL_SYNTHESIZER matches a small-model pattern
+                              (`:e2b`, `2B`, `3B`, `nano`). Set TOP_K_EVIDENCE
+                              explicitly to override this heuristic.
 """
 
 import os
@@ -102,8 +112,27 @@ MODEL_COMPRESSOR = ENV("MODEL_COMPRESSOR", MODEL_PLANNER)
 
 NUM_SUBQUERIES = int(ENV("NUM_SUBQUERIES", "3"))
 NUM_RESULTS_PER_QUERY = int(ENV("NUM_RESULTS_PER_QUERY", "5"))
-TOP_K_EVIDENCE = int(ENV("TOP_K_EVIDENCE", "8"))
 SEARXNG_URL = ENV("SEARXNG_URL", "http://localhost:8888")
+
+# W6 — small-model hardening. If the synthesizer looks like a small local
+# model (gemma4:e2b / qwen…-2B / gpt-…-nano), auto-reduce TOP_K_EVIDENCE so
+# the synthesize prompt stays well under the reliable-context ceiling.
+# Users who set TOP_K_EVIDENCE explicitly keep their value.
+# Matches: `:e2b`, `:e4b`, `:1b`, `:2b`, `:3b`, `-2b`, `-3b`, `nano`. Does NOT
+# match `mini` — `gpt-5-mini` / `gpt-4o-mini` are cloud-hosted and capable.
+_SMALL_MODEL_RE = re.compile(r"(:[e]?[1-4]b\b|[-_][1-4]b\b|\bnano\b)", re.IGNORECASE)
+
+
+def _default_top_k(model_synth: str, explicit: str | None) -> int:
+    if explicit is not None:
+        return int(explicit)
+    if _SMALL_MODEL_RE.search(model_synth or ""):
+        return int(ENV("SMALL_MODEL_TOPK", "5"))
+    return 8
+
+
+TOP_K_EVIDENCE = _default_top_k(ENV("MODEL_SYNTHESIZER", ""), os.environ.get("TOP_K_EVIDENCE"))
+PER_CHUNK_CHAR_CAP = int(ENV("PER_CHUNK_CHAR_CAP", "1200"))
 
 ENABLE_HYDE = ENV("ENABLE_HYDE", "1") == "1"
 ENABLE_VERIFY = ENV("ENABLE_VERIFY", "1") == "1"
@@ -530,28 +559,43 @@ def _compress(state: State) -> dict:
     Goal: cut evidence text ~3× while preserving claims that answer the question.
     Implementation: one compressor call asks for a 2-3 sentence distilled version of
     each evidence chunk, focused on the question. Keeps URLs intact so citations still work.
+
+    W6 hardening: after the compressor returns, every chunk is hard-capped at
+    PER_CHUNK_CHAR_CAP chars. When the compressor fails to shrink a chunk (the
+    failure mode that made small local models hallucinate — see DEC-012), this
+    bounds the synthesize prompt regardless. Pass-through chunks (compressor
+    produced no line for them) are also capped.
     """
-    if not ENABLE_COMPRESS or not state.get("evidence"):
+    if not state.get("evidence"):
         return {
             "evidence_compressed": state.get("evidence", []),
             "trace": _merge_trace(state, "compress"),
         }
-    bullets = "\n\n".join(f"[{i+1}] {e['text']}" for i, e in enumerate(state["evidence"]))
-    prompt = (
-        f"Compress each numbered chunk below to 2-3 short sentences that keep ONLY what "
-        f"is relevant to the question. Preserve the bracket indices exactly. Output each "
-        f"compressed chunk as `[N] <compressed text>` on its own paragraph.\n\n"
-        f"Question: {state['question']}\n\nChunks:\n{bullets}"
-    )
-    raw = _chat(MODEL_COMPRESSOR, prompt)
+
     compressed: list[dict] = list(state["evidence"])  # default: pass-through
-    for line in raw.splitlines():
-        m = re.match(r"\[(\d+)\]\s*(.+)", line.strip())
-        if not m:
-            continue
-        idx = int(m.group(1)) - 1
-        if 0 <= idx < len(compressed):
-            compressed[idx] = {**compressed[idx], "text": m.group(2).strip()}
+
+    if ENABLE_COMPRESS:
+        bullets = "\n\n".join(f"[{i+1}] {e['text']}" for i, e in enumerate(state["evidence"]))
+        prompt = (
+            f"Compress each numbered chunk below to 2-3 short sentences that keep ONLY what "
+            f"is relevant to the question. Preserve the bracket indices exactly. Output each "
+            f"compressed chunk as `[N] <compressed text>` on its own paragraph.\n\n"
+            f"Question: {state['question']}\n\nChunks:\n{bullets}"
+        )
+        raw = _chat(MODEL_COMPRESSOR, prompt)
+        for line in raw.splitlines():
+            m = re.match(r"\[(\d+)\]\s*(.+)", line.strip())
+            if not m:
+                continue
+            idx = int(m.group(1)) - 1
+            if 0 <= idx < len(compressed):
+                compressed[idx] = {**compressed[idx], "text": m.group(2).strip()}
+
+    # W6 — hard cap every chunk's text, whether compressed or pass-through.
+    compressed = [
+        {**c, "text": c["text"][:PER_CHUNK_CHAR_CAP]} if len(c.get("text", "")) > PER_CHUNK_CHAR_CAP else c
+        for c in compressed
+    ]
     return {"evidence_compressed": compressed, "trace": _merge_trace(state, "compress")}
 
 
@@ -560,9 +604,26 @@ def _compress(state: State) -> dict:
 def _synthesize_once(state: State) -> str:
     ev = state.get("evidence_compressed") or state["evidence"]
     bullets = "\n".join(f"[{i+1}] {e['text']}  (src: {e['url']})" for i, e in enumerate(ev))
-    prompt = (f"Answer using the evidence. Cite sources inline as [1], [2]. Be concise and factual. "
-              f"If an aspect is not supported by the evidence, say so explicitly.\n\n"
-              f"Question: {state['question']}\n\nEvidence:\n{bullets}")
+    # W6 — anti-hallucination clause, refined after the initial too-binary
+    # version caused partial-answer regressions (Scenarios A and C refused
+    # cleanly when the baseline had given a valid partial answer). The fix
+    # is an explicit three-case rule: full answer / partial answer with
+    # gap acknowledgement / refuse only when evidence is unrelated.
+    prompt = (
+        f"Answer the question using ONLY the evidence. Rules:\n"
+        f"  1. Cite every factual claim inline as [1], [2], etc.\n"
+        f"  2. If the evidence FULLY answers the question: answer concisely.\n"
+        f"  3. If the evidence partially answers the question: answer what the "
+        f"evidence supports, then name the specific aspects that are NOT "
+        f"supported by the evidence. Cite the supported parts.\n"
+        f"  4. If the evidence is UNRELATED to the question (covers a different "
+        f"topic entirely), reply with exactly: \"The provided evidence does "
+        f"not answer this question.\" — nothing else.\n"
+        f"  5. Never invent facts, definitions, or examples not present in the "
+        f"evidence. Never substitute a related topic the evidence covers for "
+        f"the actual question.\n\n"
+        f"Question: {state['question']}\n\nEvidence:\n{bullets}"
+    )
     return _chat(MODEL_SYNTHESIZER, prompt)
 
 

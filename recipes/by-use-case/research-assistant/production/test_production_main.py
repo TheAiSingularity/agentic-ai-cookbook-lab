@@ -66,8 +66,8 @@ def patched(monkeypatch):
         # CoVe verification
         if "List each standalone factual claim" in p:
             return _chat_resp("CLAIM: fact one\nVERIFIED: yes\nCLAIM: fact two\nVERIFIED: no\nCLAIM: fact three\nVERIFIED: yes")
-        # Synthesizer
-        if "Answer using the evidence" in p:
+        # Synthesizer (W6 anti-hallucination clause)
+        if "Answer the question using ONLY the evidence" in p:
             return _chat_resp("Final answer [1] with citations [2].")
         return _chat_resp("unexpected prompt")
 
@@ -529,6 +529,95 @@ def test_print_trace_summary_handles_empty_and_populated(capsys):
     assert "trace summary" in out
     assert "plan" in out and "synthesize" in out
     assert "m1" in out and "m2" in out
+
+
+# ── W6 — small-model hardening ───────────────────────────────────────
+
+def test_small_model_heuristic_matches_ollama_patterns():
+    assert main._SMALL_MODEL_RE.search("gemma4:e2b")
+    assert main._SMALL_MODEL_RE.search("qwen2.5:3b")
+    assert main._SMALL_MODEL_RE.search("tinyllama:1b")
+    assert main._SMALL_MODEL_RE.search("gpt-5-nano")
+    assert main._SMALL_MODEL_RE.search("llama-3b-instruct")
+
+
+def test_small_model_heuristic_does_not_match_capable_models():
+    assert not main._SMALL_MODEL_RE.search("gpt-5-mini")
+    assert not main._SMALL_MODEL_RE.search("gpt-4o-mini")
+    assert not main._SMALL_MODEL_RE.search("Qwen/Qwen3.6-35B-A3B")
+    assert not main._SMALL_MODEL_RE.search("claude-4.6-opus")
+    assert not main._SMALL_MODEL_RE.search("gpt-5")
+
+
+def test_default_top_k_respects_explicit_override():
+    # Explicit env wins regardless of model name.
+    assert main._default_top_k("gemma4:e2b", "10") == 10
+    assert main._default_top_k("gpt-5-mini", "3") == 3
+
+
+def test_default_top_k_shrinks_for_small_models():
+    # Small model + no explicit → SMALL_MODEL_TOPK (default 5).
+    assert main._default_top_k("gemma4:e2b", None) == 5
+    assert main._default_top_k("gpt-5-nano", None) == 5
+
+
+def test_default_top_k_keeps_8_for_capable_models():
+    assert main._default_top_k("gpt-5-mini", None) == 8
+    assert main._default_top_k("Qwen/Qwen3.6-35B-A3B", None) == 8
+
+
+def test_compress_applies_per_chunk_cap_after_compression(patched, monkeypatch):
+    monkeypatch.setattr(main, "PER_CHUNK_CHAR_CAP", 20)
+    # Make compressor return long chunks exceeding the cap.
+    def long_compressor(*args, **kwargs):
+        return _chat_resp("[1] " + "A" * 200 + "\n[2] " + "B" * 50)
+
+    client = mock.MagicMock()
+    client.chat.completions.create.side_effect = long_compressor
+    monkeypatch.setattr(main, "OpenAI", mock.MagicMock(return_value=client))
+
+    state = {"question": "q", "evidence": [
+        {"url": "u1", "text": "orig1"},
+        {"url": "u2", "text": "orig2"},
+    ]}
+    result = main._compress(state)
+    # Both chunks capped at 20 chars.
+    assert all(len(c["text"]) <= 20 for c in result["evidence_compressed"])
+
+
+def test_compress_caps_passthrough_chunks_when_disabled(patched, monkeypatch):
+    monkeypatch.setattr(main, "ENABLE_COMPRESS", False)
+    monkeypatch.setattr(main, "PER_CHUNK_CHAR_CAP", 15)
+    state = {"question": "q", "evidence": [
+        {"url": "u1", "text": "A" * 100},       # over cap → truncated
+        {"url": "u2", "text": "short"},         # under cap → passthrough
+    ]}
+    result = main._compress(state)
+    comp = result["evidence_compressed"]
+    assert len(comp[0]["text"]) == 15
+    assert comp[1]["text"] == "short"
+
+
+def test_synthesize_prompt_includes_anti_hallucination_clause(patched, monkeypatch):
+    captured: dict[str, str] = {}
+
+    def capture(*args, **kwargs):
+        captured["prompt"] = kwargs.get("messages", [{}])[0].get("content", "")
+        return _chat_resp("Final answer [1].")
+
+    client = mock.MagicMock()
+    client.chat.completions.create.side_effect = capture
+    monkeypatch.setattr(main, "OpenAI", mock.MagicMock(return_value=client))
+
+    state = {"question": "q", "evidence_compressed": [{"url": "u", "text": "ev"}]}
+    main._synthesize_once(state)
+    p = captured["prompt"]
+    # W6 refined clause covers three cases: full / partial / unrelated.
+    assert "FULLY answers" in p
+    assert "partially answers" in p
+    assert "UNRELATED" in p
+    assert "Never invent facts" in p
+    assert "Never substitute a related topic" in p
 
 
 # ── W5.1 — local corpus augmentation ─────────────────────────────────

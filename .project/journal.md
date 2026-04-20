@@ -1,5 +1,39 @@
 # Progress Journal
 
+## 2026-04-20 (Wave 6) — small-model hardening + repo public
+
+**Repo flipped public** at https://github.com/TheAiSingularity/agentic-ai-cookbook-lab. Pre-public hygiene: full git-history secret scan (clean across all 15 commits), defensive .gitignore additions (`*.idx/`, `corpus-*/`, `hf_cache/`, `.cache/`), root README refresh from stale Wave-3 state to accurate Wave-5 surface with 135-test badge and corpus usage documented. Repo description updated on GitHub side too — the old one still claimed framework-comparison scope (DEC-006 pivoted away from that months ago).
+
+**Wave 6 hardening** triggered by the rerun evaluation user asked for. On Mac `gemma4:e2b`, live scenarios exposed three hallucination failure modes not caught by mocked tests:
+- Scenario B with `ENABLE_RERANK=1` → off-topic logarithm-power-rule essay from ~19 k-token evidence dump
+- Scenario D with corpus attached → veterinary-management-system essay (pattern-completion failure)
+- Partial-evidence questions → plausible-sounding but off-point essays
+
+Root cause per trace: synthesizer loses the question thread on small-model inference with large contexts. Pipeline was fine; prompting was permissive.
+
+Three independent W6 measures, each env-gated:
+
+- **W6.1 — Anti-hallucination synthesize prompt.** Refined through two iterations in the same session. First attempt was too binary ("answer fully or refuse") which regressed Scenario A's valid partial answer. Final three-case rule: FULL answer / partial answer + named gaps / UNRELATED evidence → refuse exactly. Added explicit "never invent" + "never substitute a related topic" clauses.
+- **W6.2 — `PER_CHUNK_CHAR_CAP=1200`.** After compress, every chunk is hard-truncated whether compressor ran or not. Bounds synthesize prompt regardless of compressor quality. Works with `ENABLE_COMPRESS=0` too.
+- **W6.3 — Small-model TopK auto-heuristic.** `_SMALL_MODEL_RE` matches `:e2b`, `:1b-4b`, `-1b-4b`, `nano` (deliberately not `mini` — gpt-5-mini/gpt-4o-mini are cloud-hosted and capable). When matched and no explicit override, reduces `TOP_K_EVIDENCE` from 8 → 5.
+
+**Live re-run validation** on the four scenarios:
+
+| Scenario | Baseline | W6 |
+|---|---|---|
+| A · factoid | partial: year unspecified + 49%/35% · 94.7 s | **"Sep 2024 + 67%" direct answer · 78 s** |
+| B · multi-hop | rambling essay · 152 s | **clean refusal · 229 s** |
+| C · synthesis | generic essay · 140 s | **structured partial + gap flagging · 176 s** |
+| B + rerank | logarithm hallucination · 208 s | **clean refusal · 306 s** |
+
+No hallucinations anywhere. All four scenarios behave correctly for their evidence coverage.
+
+**Tests: 135 → 143 green.** 8 new W6 cases (regex matching, explicit-override respect, small/capable model detection, per-chunk cap with/without compress, prompt content assertions). Existing fixture's chat_router updated to key off the new prompt's opening ("Answer the question using ONLY the evidence").
+
+**Docs updated.** DEC-012 logged. `docs/progress.md` current-state table bumped to Wave 6 (143 tests, "Repo visibility: Public", Wave 6 row), new Wave 6 section with before/after table. Journal entry here.
+
+Pending next: streaming synthesis (stream tokens to stdout), then `document-qa` recipe.
+
 ## 2026-04-20 (Wave 5) — local corpus indexing + rerank verified live
 
 After Wave 4 shipped with three local-first engine enhancements (rerank wired, trafilatura fetch, observability trace), the research pipeline still couldn't read the user's own documents — a significant gap for serious research use. Wave 5 closes that, and along the way verified the rerank stage end-to-end against the real `bge-reranker-v2-m3` model.
