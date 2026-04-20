@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.TheAiSingularity/agentic-research",
-  "description": "Local-first research agent that verifies its own answers. 8-node LangGraph pipeline (classify → plan → search → retrieve → fetch_url → compress → synthesize → verify) with CoVe verification, cross-encoder rerank, contextual chunking, and 6 domain presets (general, medical, papers, financial, stock_trading, personal_docs). Default stack: Gemma 3 4B via Ollama + SearXNG + trafilatura, $0 per query. Any OpenAI-compatible endpoint via OPENAI_BASE_URL.",
+  "description": "Local research agent that verifies its own answers. Runs on Gemma 3 4B + Ollama, $0/query.",
   "version": "0.1.1",
   "repository": {
     "url": "https://github.com/TheAiSingularity/agentic-research-engine-oss",
