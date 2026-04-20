@@ -1,0 +1,340 @@
+{
+  "fixture": "simpleqa_mini.jsonl",
+  "timestamp": "2026-04-20T22:11:47+00:00",
+  "n_questions": 20,
+  "n_passed": 0,
+  "pass_rate": 0.0,
+  "mean_wall_s": 41.3,
+  "mean_tokens_est": 10832.9,
+  "verified_claims_total": 65,
+  "total_claims": 76,
+  "verified_ratio": 0.8553,
+  "ablations": {
+    "MODEL": "gemma3:4b"
+  },
+  "per_question": [
+    {
+      "id": "sqa-01",
+      "domain": "general",
+      "question": "What year did Anthropic publish the Contextual Retrieval blog post?",
+      "answer": "2023 [1], [2], [3], [4], [5]",
+      "wall_s": 75.19,
+      "verified": 5,
+      "total_claims": 5,
+      "iterations": 2,
+      "tokens_est": 19684,
+      "must_contain_missing": [
+        "2024"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-02",
+      "domain": "papers",
+      "question": "What cross-encoder model name does this cookbook use for reranking?",
+      "answer": "The LayoutLMv3 Cross-Encoder was specifically used [2, 3].",
+      "wall_s": 51.77,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 2,
+      "tokens_est": 17226,
+      "must_contain_missing": [
+        "bge-reranker-v2-m3"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-03",
+      "domain": "general",
+      "question": "Which two open-source libraries power the hybrid retriever in core/rag: one for sparse retrieval and one for full-page fetch?",
+      "answer": "The evidence states that the hybrid retriever in core/rag uses OpenSearch for sparse retrieval and supports full-page fetch via a yet-unnamed library [5].",
+      "wall_s": 48.45,
+      "verified": 6,
+      "total_claims": 6,
+      "iterations": 1,
+      "tokens_est": 16618,
+      "must_contain_missing": [
+        "BM25",
+        "trafilatura"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-04",
+      "domain": "papers",
+      "question": "What does FLARE stand for in the 2023 Jiang et al. paper on retrieval augmentation?",
+      "answer": "FLARE stands for Forward-Looking Active REtrieval augmented generation [5].",
+      "wall_s": 26.11,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 8037,
+      "must_contain_missing": [
+        "Jiang"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-05",
+      "domain": "general",
+      "question": "Which meta-search engine does this cookbook self-host to avoid paid search APIs?",
+      "answer": "The Google Cookbook is a feature within Google that allows users to discover, save, and organize recipes conveniently [1, 2, 3, 4, 5].",
+      "wall_s": 77.06,
+      "verified": 7,
+      "total_claims": 13,
+      "iterations": 2,
+      "tokens_est": 28808,
+      "must_contain_missing": [
+        "SearXNG"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-06",
+      "domain": "papers",
+      "question": "What is the name of the decomposition + verification loop technique for hallucination reduction described by Dhuliawala et al. 2023?",
+      "answer": "Chain-of-Verification [1, 2, 3, 4]",
+      "wall_s": 33.21,
+      "verified": 6,
+      "total_claims": 6,
+      "iterations": 1,
+      "tokens_est": 6545,
+      "must_contain_missing": [
+        "CoVe"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-07",
+      "domain": "general",
+      "question": "What local Mac chat model does the engine default to for the Phase 1 benchmark?",
+      "answer": "The engine defaults to the gpt-oss-20b model for the Phase 1 benchmark [1, 2, 3, 4].",
+      "wall_s": 21.54,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 4791,
+      "must_contain_missing": [
+        "gemma3:4b"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-08",
+      "domain": "general",
+      "question": "What cosine-similarity threshold (default) does memory retrieval use to filter trajectories?",
+      "answer": "Memory retrieval uses a cosine-similarity threshold, but the default value is not explicitly stated [1, 2, 3, 4, 5].",
+      "wall_s": 30.62,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 7800,
+      "must_contain_missing": [
+        "0.55"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-09",
+      "domain": "general",
+      "question": "What is the default value of PER_CHUNK_CHAR_CAP, the W6.2 safety rail on evidence chunk size?",
+      "answer": "The default value of `PER_CHUNK_CHAR_CAP` is 500 characters [1, 2, 3, 4, 5].",
+      "wall_s": 50.11,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 4026,
+      "must_contain_missing": [
+        "1200"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-10",
+      "domain": "general",
+      "question": "Which embedder does the engine use by default on Mac local?",
+      "answer": "The engine uses the all-MiniLM-L6-v2 embedder by default on Mac local [1, 2, 3, 4, 5].",
+      "wall_s": 25.61,
+      "verified": 5,
+      "total_claims": 5,
+      "iterations": 1,
+      "tokens_est": 4797,
+      "must_contain_missing": [
+        "nomic-embed-text"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-11",
+      "domain": "papers",
+      "question": "Which 2024 paper reports ~67% reduction in retrieval failures when Contextual Retrieval is combined with a cross-encoder reranker?",
+      "answer": "[1] A lightweight reranker framework using Query-focused Retrieval (QR) heads produces continuous relevance scores, enabling effective listwise reranking with small-scale models. This approach achieved a ~67% reduction in retrieval failures.",
+      "wall_s": 59.3,
+      "verified": 12,
+      "total_claims": 12,
+      "iterations": 2,
+      "tokens_est": 19252,
+      "must_contain_missing": [
+        "Anthropic",
+        "Contextual Retrieval"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-12",
+      "domain": "general",
+      "question": "What is the default SearXNG base URL the engine expects?",
+      "answer": "http://searxng:8088/ [1, 2, 4]",
+      "wall_s": 20.17,
+      "verified": 4,
+      "total_claims": 4,
+      "iterations": 1,
+      "tokens_est": 4482,
+      "must_contain_missing": [
+        "localhost:8888"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-13",
+      "domain": "general",
+      "question": "Which LangGraph node runs between fetch_url and synthesize?",
+      "answer": "The evidence does not answer this question.",
+      "wall_s": 85.8,
+      "verified": 3,
+      "total_claims": 6,
+      "iterations": 2,
+      "tokens_est": 22693,
+      "must_contain_missing": [
+        "compress"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-14",
+      "domain": "papers",
+      "question": "What benchmark scores did the OpenResearcher-30B-A3B model reportedly achieve on BrowseComp-Plus?",
+      "answer": "The OpenResearcher-30B-A3B model achieved a BrowseComp-Plus score of 12.7 [1].",
+      "wall_s": 30.96,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 6498,
+      "must_contain_missing": [
+        "54.8"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-15",
+      "domain": "general",
+      "question": "What field is appended to the trace entries of streaming LLM calls to distinguish them from batched ones?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 22.61,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 5729,
+      "must_contain_missing": [
+        "streamed"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-16",
+      "domain": "papers",
+      "question": "What is the Reciprocal Rank Fusion k value commonly used in RAG literature (also the default in HybridRetriever)?",
+      "answer": "The default k value for Reciprocal Rank Fusion (RRF) in HybridRetriever is commonly used in RAG literature [4]. [4]",
+      "wall_s": 63.15,
+      "verified": 5,
+      "total_claims": 6,
+      "iterations": 2,
+      "tokens_est": 14584,
+      "must_contain_missing": [
+        "60"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-17",
+      "domain": "general",
+      "question": "Which MCP tool does the Claude plugin bundle expose as the primary research entry point?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 19.31,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 4592,
+      "must_contain_missing": [
+        "research"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-18",
+      "domain": "general",
+      "question": "What does the engine do when ENABLE_FETCH=1 but trafilatura is not installed?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 15.12,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 4095,
+      "must_contain_missing": [
+        "snippet",
+        "fetched: False"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-19",
+      "domain": "general",
+      "question": "Which file path pattern does the engine use for corpus-backed citations in its answers?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 22.91,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 5406,
+      "must_contain_missing": [
+        "corpus://"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-20",
+      "domain": "general",
+      "question": "What is the default MAX_ITERATIONS bound on the verify\u2192search re-search loop?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 46.96,
+      "verified": 2,
+      "total_claims": 3,
+      "iterations": 2,
+      "tokens_est": 10995,
+      "must_contain_missing": [
+        "2"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    }
+  ]
+}
