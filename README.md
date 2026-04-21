@@ -119,7 +119,7 @@ make smoke    # end-to-end run on the canonical "what is contextual retrieval" q
 Expected wall-clock on an M-series Mac: **~45 s** for a factoid,
 ~90 s for multi-hop synthesis. Zero dollars per query.
 
-### Higher factoid accuracy — route one node to a cloud model
+### Higher honesty — cloud-model mode
 
 Gemma 3 4B is surprisingly good at **structure** (plan, route, verify,
 compress) but confabulates **specific factoids** when SearXNG doesn't
@@ -129,25 +129,43 @@ showed `gemma3:4b` emitting "2023" for *"year Anthropic published
 Contextual Retrieval"* (gold: 2024) and "LayoutLMv3" for *"which
 cross-encoder for reranking"* (gold: bge-reranker-v2-m3).
 
-If you care about factoid accuracy more than $0/query, route **only
-the synthesizer** to a cloud model and keep everything else local:
+The fix you probably want isn't a smarter synthesizer — it's a
+**more honest** one. A 5-question head-to-head on the same retrieval
+output showed `gpt-5-nano` + `gpt-5-mini` refuse to confabulate when
+evidence was missing (*"The provided evidence does not answer this
+question"*), where `gemma3:4b` confidently guessed. Per-claim
+faithfulness went from 82.9 % → 100 %. Pass rate barely moved (1/5
+vs 0/5) because **retrieval is the real bottleneck** — if SearXNG
+didn't return a source with the gold token, neither model can
+produce it.
+
+Swap the whole stack to a cloud endpoint:
 
 ```bash
-# keep Gemma 3 4B for planning / verification / compression / routing
-export MODEL_PLANNER=gemma3:4b
-# route only the final synthesis to a frontier model
-unset OPENAI_BASE_URL                      # go back to cloud OpenAI
+# drop the Ollama base URL (fall back to OpenAI cloud)
+unset OPENAI_BASE_URL
 export OPENAI_API_KEY=sk-...
+# defaults are already cloud-sized: gpt-5-nano for plan/verify, gpt-5-mini for synth.
+# Explicit override if you want to pin them:
+export MODEL_PLANNER=gpt-5-nano
 export MODEL_SYNTHESIZER=gpt-5-mini        # or gpt-5, claude-sonnet-4-5, etc.
+agentic-research ask "…" --domain papers
 ```
 
-Cost is dominated by synthesizer tokens (~5–15 k per query). `gpt-5-mini`
-runs roughly **$0.01–0.03 per research query**. You keep the local
-planner/verifier/compressor loop and the $0 search/retrieval side of
-the pipeline; you only pay for the one call that produces the final
-answer. Works with any OpenAI-compatible endpoint — Groq, Together,
-Mistral, DeepSeek, local vLLM — so you can pick a cheap fast model
-(`llama-3.3-70b` on Groq ≈ $0.001/query) without giving up the rest.
+Cost is dominated by synthesizer tokens (~5–15 k per query). Full
+cloud mode with `gpt-5-nano` + `gpt-5-mini` runs roughly
+**$0.02–0.05 per research query** and is ~2-3× slower than Gemma
+local (measured: 127 s vs 52 s mean wall on the 5-question subset).
+Works with any OpenAI-compatible endpoint — Groq, Together, Mistral,
+DeepSeek, local vLLM — so you can pick a cheap fast model
+(`llama-3.3-70b` on Groq ≈ $0.003/query) or a frontier one. Per-node
+base-URL routing (run gemma3:4b locally for plan/verify AND gpt-5-mini
+on cloud for synth in the same query) is tracked for 0.2; today the
+pipeline uses one global `OPENAI_BASE_URL`.
+
+**The bigger accuracy lever is retrieval.** Point
+`LOCAL_CORPUS_PATH` at an indexed corpus containing your answer and
+either model will be correct.
 
 ---
 
@@ -503,11 +521,11 @@ template — include `ollama list`, `engine version`, and the error.
   [`engine/benchmarks/RESULTS.md`](engine/benchmarks/RESULTS.md) —
   `verified_ratio` 85.5 %, zero `must_not_contain` hits; the model
   isn't emitting *banned* strings, it's picking wrong ones). Mitigations:
-  (a) route only the synthesizer to a cloud model (see "Higher factoid
-  accuracy" above — `$0.01–0.03/query` with `gpt-5-mini`), (b) give
-  the engine a `LOCAL_CORPUS_PATH` so your own docs become retrieval
-  targets, (c) set `ENABLE_RERANK=1` to bias retrieval toward the
-  right sources.
+  (a) swap the whole stack to a cloud endpoint (see "Higher factoid
+  accuracy" above — `$0.02–0.05/query` with `gpt-5-nano` + `gpt-5-mini`),
+  (b) give the engine a `LOCAL_CORPUS_PATH` so your own docs become
+  retrieval targets, (c) set `ENABLE_RERANK=1` to bias retrieval
+  toward the right sources.
 - **CoVe confirms internal consistency, not ground truth.** Every
   synthesized claim is checked against retrieved evidence; claims
   don't get verified *by the world*. If retrieval misses, CoVe will

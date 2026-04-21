@@ -55,12 +55,18 @@ def _llm() -> OpenAI:
     return OpenAI(api_key=ENV("OPENAI_API_KEY", "ollama"), base_url=ENV("OPENAI_BASE_URL"))
 
 
+def _supports_temperature(model: str) -> bool:
+    """GPT-5 family rejects any non-default temperature (must omit the kwarg)."""
+    return not (model or "").lower().startswith("gpt-5")
+
+
 def _chat(model: str, prompt: str, temperature: float = 0.0) -> str:
     """Batched chat completion. Appends a trace entry when ENABLE_TRACE=1."""
     t0 = time.monotonic()
-    resp = _llm().chat.completions.create(
-        model=model, messages=[{"role": "user", "content": prompt}], temperature=temperature
-    )
+    kwargs: dict = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+    if _supports_temperature(model):
+        kwargs["temperature"] = temperature
+    resp = _llm().chat.completions.create(**kwargs)
     content = resp.choices[0].message.content or ""
     if _trace.ENABLE_TRACE:
         _trace._TRACE_BUFFER.append({
@@ -85,13 +91,15 @@ def _chat_stream(model: str, prompt: str, temperature: float = 0.0, sink=None) -
             sys.stdout.flush()
 
     t0 = time.monotonic()
+    stream_kwargs: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True,
+    }
+    if _supports_temperature(model):
+        stream_kwargs["temperature"] = temperature
     try:
-        stream = _llm().chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            stream=True,
-        )
+        stream = _llm().chat.completions.create(**stream_kwargs)
     except Exception as exc:  # noqa: BLE001 — backend may reject streaming; fall back
         # Only print on stderr when the user has trace enabled — otherwise
         # silent fallback keeps scripted runs clean.
@@ -134,5 +142,5 @@ __all__ = [
     "MODEL_PLANNER", "MODEL_SEARCHER", "MODEL_SYNTHESIZER", "MODEL_VERIFIER",
     "MODEL_CRITIC", "MODEL_ROUTER", "MODEL_COMPRESSOR",
     "ENABLE_STREAM", "_SMALL_MODEL_RE", "_default_top_k",
-    "_llm", "_chat", "_chat_stream", "OpenAI",
+    "_llm", "_chat", "_chat_stream", "_supports_temperature", "OpenAI",
 ]

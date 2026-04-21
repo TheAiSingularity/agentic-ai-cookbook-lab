@@ -1,0 +1,95 @@
+{
+  "fixture": "simpleqa_cloud5.jsonl",
+  "timestamp": "2026-04-21T09:28:21+00:00",
+  "n_questions": 5,
+  "n_passed": 1,
+  "pass_rate": 0.2,
+  "mean_wall_s": 127.19,
+  "mean_tokens_est": 0.0,
+  "verified_claims_total": 52,
+  "total_claims": 52,
+  "verified_ratio": 1.0,
+  "ablations": {},
+  "per_question": [
+    {
+      "id": "sqa-01",
+      "domain": "general",
+      "question": "What year did Anthropic publish the Contextual Retrieval blog post?",
+      "answer": "2024 [4].",
+      "wall_s": 99.99,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 0,
+      "must_contain_missing": [],
+      "must_not_contain_hits": [],
+      "passed": true
+    },
+    {
+      "id": "sqa-04",
+      "domain": "papers",
+      "question": "What does FLARE stand for in the 2023 Jiang et al. paper on retrieval augmentation?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 151.53,
+      "verified": 8,
+      "total_claims": 8,
+      "iterations": 1,
+      "tokens_est": 0,
+      "must_contain_missing": [
+        "Forward-Looking Active REtrieval",
+        "Jiang"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-06",
+      "domain": "papers",
+      "question": "What is the name of the decomposition + verification loop technique for hallucination reduction described by Dhuliawala et al. 2023?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 121.91,
+      "verified": 22,
+      "total_claims": 22,
+      "iterations": 1,
+      "tokens_est": 0,
+      "must_contain_missing": [
+        "Chain-of-Verification",
+        "CoVe"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-11",
+      "domain": "papers",
+      "question": "Which 2024 paper reports ~67% reduction in retrieval failures when Contextual Retrieval is combined with a cross-encoder reranker?",
+      "answer": "No 2024 paper is identified that reports this ~67% reduction; the figure is attributed to a blog post (\"Contextual RAG: Anthropic's 67% Breakthrough for High-Stakes Accuracy\") and not tied to any 2024 paper or bibliographic details (title, venue, year, or arXiv/DOI) in the provided evidence [2][3].",
+      "wall_s": 177.98,
+      "verified": 20,
+      "total_claims": 20,
+      "iterations": 1,
+      "tokens_est": 0,
+      "must_contain_missing": [
+        "Contextual Retrieval"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    },
+    {
+      "id": "sqa-16",
+      "domain": "papers",
+      "question": "What is the Reciprocal Rank Fusion k value commonly used in RAG literature (also the default in HybridRetriever)?",
+      "answer": "The provided evidence does not answer this question.",
+      "wall_s": 84.56,
+      "verified": 1,
+      "total_claims": 1,
+      "iterations": 1,
+      "tokens_est": 0,
+      "must_contain_missing": [
+        "60"
+      ],
+      "must_not_contain_hits": [],
+      "passed": false
+    }
+  ]
+}

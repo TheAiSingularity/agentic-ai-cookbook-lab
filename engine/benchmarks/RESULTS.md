@@ -306,3 +306,91 @@ Checked-in outputs:
 - `engine/benchmarks/results/2026-04-21/browsecomp_detail.jsonl`
 
 ---
+
+## Phase 9b — Cloud comparison (2026-04-21)
+
+To answer the obvious follow-up — *"what if we route the synthesizer
+to a cloud model?"* — ran the 5 hardest `simpleqa_mini` failures
+(factoid hallucinations: sqa-01 / 04 / 06 / 11 / 16) on the full
+cloud stack: `gpt-5-nano` planner/verifier/critic/router/compressor
++ `gpt-5-mini` synthesizer, `text-embedding-3-small` embeddings, same
+SearXNG + trafilatura + CoVe loop. Fixture: `simpleqa_cloud5.jsonl`.
+
+| metric | gemma3:4b (local) | gpt-5-nano + gpt-5-mini (cloud) |
+|---|---:|---:|
+| pass rate | **0 / 5 (0.0 %)** | **1 / 5 (20.0 %)** |
+| mean wall | 52.3 s | 127.2 s |
+| verified claims | 29 / 35 (82.9 %) | **52 / 52 (100.0 %)** |
+| total claims emitted | 35 | 52 |
+| cost per query (est.) | $0 | ~$0.02 |
+| must_not_contain hits | 0 | 0 |
+
+### The actual signal: cloud doesn't pass more, it hallucinates less
+
+Only one question flipped to pass (`sqa-01` "What year did Anthropic
+publish Contextual Retrieval?" — cloud answered "2024 [4]", local had
+answered "2023"). On the other four, cloud **refused to confabulate**
+and said *"The provided evidence does not answer this question."*
+Local had confidently guessed — right sometimes, wrong sometimes.
+
+Side-by-side on the same 5 questions:
+
+| id | question | gemma3:4b (local) | gpt-5-nano + gpt-5-mini (cloud) |
+|---|---|---|---|
+| sqa-01 | Anthropic CR year | "2023 [1,2,3,4,5]" ✗ | **"2024 [4]"** ✓ |
+| sqa-04 | FLARE full name / author | "Forward-Looking Active REtrieval augmented generation [5]" (correct acronym, missed "Jiang") | "The provided evidence does not answer this question." |
+| sqa-06 | Dhuliawala 2023 decomp-loop technique | "Chain-of-Verification [1,2,3,4]" (correct long form, missed "CoVe" token) | "The provided evidence does not answer this question." |
+| sqa-11 | 2024 paper, 67 % retrieval-failure reduction | "A lightweight reranker framework… achieved a ~67% reduction" (wrong paper, missed Anthropic tie) | "No 2024 paper is identified… the figure is attributed to a blog post (\"Contextual RAG: Anthropic's 67% Breakthrough\")." |
+| sqa-16 | RRF k default value | "commonly used in RAG literature [4]" (omitted number) | "The provided evidence does not answer this question." |
+
+So the trade-off is real but different from the headline I was
+expecting. What actually happens when you move to cloud:
+
+- **Honesty goes up.** `verified_ratio` 82.9 % → 100 %. Cloud models
+  strictly obey the evidence constraint; the small local model
+  sometimes drifts into pre-training memory when evidence is weak.
+- **Latency goes up 2-3×.** Partly because the cloud synthesizer
+  writes longer answers (52 vs 35 claims on the same 5 questions),
+  partly round-trip / rate-limit overhead. 127 s mean is not great.
+- **Pass rate barely moves.** Because the underlying SearXNG results
+  are the same — retrieval is still the bottleneck. A smarter
+  synthesizer can't pass a question whose evidence isn't retrieved.
+  `sqa-01` passed because SearXNG *did* return a source with "2024"
+  in it, and cloud trusted the source over its own prior.
+
+### What this means for the "higher accuracy" dial
+
+The README claim that `MODEL_SYNTHESIZER=gpt-5-mini` buys higher
+factoid accuracy is **half-right**. It buys **honesty, not
+omniscience**. If you use it:
+
+- Your answers will be correct more often **per emitted fact** (100 %
+  verified vs 82.9 %).
+- Your answers will more often be *"I don't know"* when retrieval
+  misses — which is usually the right answer, and what most users
+  would actually want.
+- Pass rate on strict-substring benchmarks barely moves unless you
+  also improve retrieval (better domain presets, `LOCAL_CORPUS_PATH`,
+  `ENABLE_RERANK=1`).
+
+The real accuracy unlock is not the synthesizer. It's giving the
+engine a **local corpus** that contains the answer. The cloud
+synthesizer is then correctly grounded in documents we control.
+
+### Cloud-mode bug fixed in this session
+
+First cloud run crashed with HTTP 400 *"temperature does not support
+0.0 with this model. Only the default (1) value is supported"*. GPT-5
+family rejects any explicit temperature; the engine was hardcoding
+`temperature=0.0` in every `_chat` / `_chat_stream` call. Patched
+`engine/core/models.py`: new `_supports_temperature(model)` helper
+omits the kwarg for any model starting with `gpt-5`. 104 engine tests
+still green.
+
+### Checked-in outputs
+
+- `engine/benchmarks/results/simpleqa_cloud5/2026-04-21T092821Z_summary.json`
+- `engine/benchmarks/results/simpleqa_cloud5/2026-04-21T092821Z_detail.jsonl`
+- Source fixture: `engine/benchmarks/simpleqa_cloud5.jsonl`
+
+---
