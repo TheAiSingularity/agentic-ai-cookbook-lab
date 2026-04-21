@@ -153,4 +153,4 @@ Common issues — full list in the [root README troubleshooting section](../READ
 - **Phase 8** — benchmark harness + public numbers
 - **Phase 9** — rebrand + public launch
 
-See [`.project/plans/research-engine-master-plan.md`](../.project/plans/research-engine-master-plan.md).
+Current roadmap lives in [GitHub Issues](https://github.com/TheAiSingularity/agentic-research-engine-oss/issues); per-phase prose in [`CHANGELOG.md`](../CHANGELOG.md).

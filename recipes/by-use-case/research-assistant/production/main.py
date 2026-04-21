@@ -1,11 +1,10 @@
 """Research-assistant production — **thin shim** over `engine.core`.
 
-The pipeline code moved to `engine/core/` in Phase 1 of the research-engine
-master plan (`.project/plans/research-engine-master-plan.md`). This file
-stays at its original path so existing bookmarks, recipe READMEs, and the
-test file keep working without URL churn. Every public symbol is imported
-here so downstream callers (tests + docs + the recipe Makefile) see the
-same namespace they always did.
+The pipeline code moved to `engine/core/` during the research-engine
+rework. This file stays at its original path so existing bookmarks,
+recipe READMEs, and the test file keep working without URL churn.
+Every public symbol is imported here so downstream callers (tests +
+docs + the recipe Makefile) see the same namespace they always did.
 
 Design note (monkey-patching): tests monkey-patch names at *this* module's
 namespace. Because `engine.core.pipeline` imports its helpers locally (e.g.

@@ -56,3 +56,7 @@ node_modules/
 # Maintainer-local notes — launch copy, internal dev logs, draft paper.
 # Preserved on-disk under .local/ but never pushed.
 .local/
+
+# Linear-first project tracking (journal, decisions, plans, archive).
+# Local-only; Linear is the source of truth for issues / sprints.
+.project/
