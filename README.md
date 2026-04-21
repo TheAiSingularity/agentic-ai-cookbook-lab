@@ -21,7 +21,7 @@ verification decision is visible.
 
 ## Table of contents
 
-- [30-second pitch](#30-second-pitch)
+- [TL;DR](#tldr)
 - [Why use this instead of…](#why-use-this-instead-of)
 - [Quickstart — Mac local](#quickstart--mac-local)
 - [Quickstart — no install (Google Colab)](#quickstart--no-install-google-colab)
@@ -43,23 +43,28 @@ verification decision is visible.
 
 ---
 
-## 30-second pitch
+## TL;DR
 
-Local research agent. Gemma 3 4B via Ollama + SearXNG for search +
-trafilatura for full-page extraction + hybrid BM25 + dense retrieval +
-cross-encoder reranking + Chain-of-Verification for hallucination
-defense. Ships as a CLI, a Textual TUI, a FastAPI web GUI, and an MCP
-server you can install in Claude Desktop / Cursor / Continue.
+**Local-first research agent that verifies its own answers.** Runs on
+Gemma 3 4B + Ollama (3.3 GB on disk) for `$0/query`; swaps to any
+OpenAI-compatible endpoint with one env var.
 
-Same code runs against any OpenAI-compatible endpoint — swap to OpenAI,
-Groq, vLLM, SGLang, or Together via a single env var.
+```bash
+pip install agentic-research-engine
+agentic-research ask "what is Anthropic's contextual retrieval?" --domain papers
+```
 
-- **3 interfaces in parallel** — pick your flavor
-- **6 domain presets** — `general`, `medical`, `papers`, `financial`, `stock_trading`, `personal_docs`
-- **Plugin loader** — install Claude plugins or Hermes `agentskills.io` skills from GitHub or local paths
-- **Memory, opt-in** — local SQLite trajectory log with semantic retrieval; wipe anytime
-- **137 mocked tests green**, all zero-network (core/rag + engine/tests)
-- **MIT** end-to-end
+| | |
+|---|---|
+| **Interfaces** | CLI · Textual TUI · FastAPI web GUI · MCP server (Claude Desktop / Cursor / Continue) |
+| **Pipeline** | 8-node LangGraph (`classify → plan → search → retrieve → fetch → compress → synthesize → verify`); every node env-toggleable for ablation |
+| **Retrieval** | SearXNG meta-search + trafilatura fetch + hybrid BM25 / dense / RRF; opt-in `bge-reranker-v2-m3` cross-encoder |
+| **Reasoning** | HyDE query expansion · FLARE active retrieval · Chain-of-Verification (Dhuliawala et al 2023) · ThinkPRM step critic |
+| **Domains** | 6 presets (`general` · `medical` · `papers` · `financial` · `stock_trading` · `personal_docs`) — write your own in 10 lines of YAML |
+| **Plugins** | load Claude plugins or `agentskills.io` skills from GitHub or local paths |
+| **Memory** | opt-in local SQLite trajectory log with semantic retrieval; wipe anytime; no telemetry |
+| **Providers** | OpenAI · Groq · vLLM · SGLang · Together · Ollama — any OpenAI-compatible endpoint via `OPENAI_BASE_URL` |
+| **Quality** | 137 mocked tests, zero-network · honest live benchmarks published in [`RESULTS.md`](engine/benchmarks/RESULTS.md) · MIT end-to-end |
 
 ---
 
