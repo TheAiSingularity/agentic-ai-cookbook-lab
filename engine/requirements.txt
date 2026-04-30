@@ -15,3 +15,5 @@ sse-starlette>=2.1.0
 mcp>=0.1.0
 pyyaml>=6.0
 pytest>=8.0.0
+# Optional: Exa cloud search provider (set SEARCH_PROVIDER=exa + EXA_API_KEY)
+# exa-py>=2.0.0

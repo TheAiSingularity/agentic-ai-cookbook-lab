@@ -75,6 +75,17 @@ NUM_SUBQUERIES = int(ENV("NUM_SUBQUERIES", "3"))
 NUM_RESULTS_PER_QUERY = int(ENV("NUM_RESULTS_PER_QUERY", "5"))
 SEARXNG_URL = ENV("SEARXNG_URL", "http://localhost:8888")
 
+# Web-search provider: "searxng" (default, local-first) or "exa" (cloud, set EXA_API_KEY).
+SEARCH_PROVIDER = ENV("SEARCH_PROVIDER", "searxng").lower()
+EXA_API_KEY = ENV("EXA_API_KEY", "")
+EXA_SEARCH_TYPE = ENV("EXA_SEARCH_TYPE", "auto")
+EXA_CATEGORY = ENV("EXA_CATEGORY", "")
+EXA_INCLUDE_DOMAINS = ENV("EXA_INCLUDE_DOMAINS", "")
+EXA_EXCLUDE_DOMAINS = ENV("EXA_EXCLUDE_DOMAINS", "")
+EXA_START_PUBLISHED_DATE = ENV("EXA_START_PUBLISHED_DATE", "")
+EXA_END_PUBLISHED_DATE = ENV("EXA_END_PUBLISHED_DATE", "")
+EXA_HIGHLIGHTS_CHARS = int(ENV("EXA_HIGHLIGHTS_CHARS", "500"))
+
 TOP_K_EVIDENCE = _default_top_k(ENV("MODEL_SYNTHESIZER", ""), os.environ.get("TOP_K_EVIDENCE"))
 PER_CHUNK_CHAR_CAP = int(ENV("PER_CHUNK_CHAR_CAP", "1200"))
 
@@ -130,6 +141,80 @@ def _searxng(query: str, n: int = NUM_RESULTS_PER_QUERY) -> list[dict]:
     r.raise_for_status()
     return [{"url": h.get("url", ""), "title": h.get("title", ""), "snippet": h.get("content", "")}
             for h in (r.json().get("results") or [])[:n]]
+
+
+# Exa AI-powered search. Cloud-only: requires EXA_API_KEY. The client is
+# constructed lazily so test environments without the key (or without
+# `exa-py` installed) keep importing this module cleanly.
+_EXA_CLIENT = None
+
+
+def _get_exa_client():
+    global _EXA_CLIENT
+    if _EXA_CLIENT is not None:
+        return _EXA_CLIENT
+    if not EXA_API_KEY:
+        raise RuntimeError(
+            "SEARCH_PROVIDER=exa requires EXA_API_KEY to be set. "
+            "Get one at https://exa.ai/."
+        )
+    from exa_py import Exa
+    client = Exa(EXA_API_KEY)
+    client.headers["x-exa-integration"] = "agentic-research-engine-oss"
+    _EXA_CLIENT = client
+    return client
+
+
+def _exa_snippet(item) -> str:
+    """Cascade through Exa content fields: summary → joined highlights → text head."""
+    summary = getattr(item, "summary", None)
+    if summary:
+        return str(summary).strip()
+    highlights = getattr(item, "highlights", None) or []
+    joined = " … ".join(h for h in highlights if h)
+    if joined:
+        return joined.strip()
+    text = getattr(item, "text", None)
+    if text:
+        return str(text)[:EXA_HIGHLIGHTS_CHARS].strip()
+    return ""
+
+
+def _exa(query: str, n: int = NUM_RESULTS_PER_QUERY) -> list[dict]:
+    client = _get_exa_client()
+    kwargs: dict = {
+        "num_results": n,
+        "type": EXA_SEARCH_TYPE,
+        "highlights": {"max_characters": EXA_HIGHLIGHTS_CHARS},
+        "summary": True,
+    }
+    if EXA_CATEGORY:
+        kwargs["category"] = EXA_CATEGORY
+    if EXA_INCLUDE_DOMAINS:
+        kwargs["include_domains"] = [d.strip() for d in EXA_INCLUDE_DOMAINS.split(",") if d.strip()]
+    if EXA_EXCLUDE_DOMAINS:
+        kwargs["exclude_domains"] = [d.strip() for d in EXA_EXCLUDE_DOMAINS.split(",") if d.strip()]
+    if EXA_START_PUBLISHED_DATE:
+        kwargs["start_published_date"] = EXA_START_PUBLISHED_DATE
+    if EXA_END_PUBLISHED_DATE:
+        kwargs["end_published_date"] = EXA_END_PUBLISHED_DATE
+
+    response = client.search_and_contents(query, **kwargs)
+    return [
+        {
+            "url": getattr(item, "url", "") or "",
+            "title": getattr(item, "title", "") or "",
+            "snippet": _exa_snippet(item),
+        }
+        for item in (getattr(response, "results", None) or [])
+    ]
+
+
+def _web_search(query: str, n: int = NUM_RESULTS_PER_QUERY) -> list[dict]:
+    """Dispatch to the configured web-search provider. Returns [{url,title,snippet}]."""
+    if SEARCH_PROVIDER == "exa":
+        return _exa(query, n)
+    return _searxng(query, n)
 
 
 # ── Shared helpers ─────────────────────────────────────────────────
@@ -217,7 +302,7 @@ def _plan(state: State) -> dict:
 # ── Search (web + W5 corpus augmentation) ───────────────────────────
 
 def _search_one(sub: str) -> list[dict]:
-    hits = _searxng(sub)
+    hits = _web_search(sub)
     if not hits:
         return []
     sources = "\n".join(f"[{i+1}] {h['title']} — {h['snippet']}  (url: {h['url']})" for i, h in enumerate(hits))

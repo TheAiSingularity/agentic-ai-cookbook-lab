@@ -267,6 +267,7 @@ The pipeline has ~35 env gates. Exhaustive list lives in
 | memory             | `MEMORY_DB_PATH`, `MEMORY_TOP_K`, `MEMORY_MIN_SCORE` |
 | compaction         | `ENABLE_COMPACTION`, `CONTEXT_LIMIT_CHARS`, `COMPACTION_KEEP_RECENT` |
 | corpus             | `LOCAL_CORPUS_PATH`, `LOCAL_CORPUS_TOP_K`, `EMBED_MODEL` |
+| web search         | `SEARCH_PROVIDER` (`searxng` default, or `exa`), `SEARXNG_URL`, `EXA_API_KEY`, `EXA_SEARCH_TYPE`, `EXA_CATEGORY`, `EXA_INCLUDE_DOMAINS`, `EXA_EXCLUDE_DOMAINS`, `EXA_START_PUBLISHED_DATE`, `EXA_END_PUBLISHED_DATE`, `EXA_HIGHLIGHTS_CHARS` |
 | trace              | `ENABLE_TRACE` |
 
 ---

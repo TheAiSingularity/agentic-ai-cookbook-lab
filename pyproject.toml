@@ -61,6 +61,7 @@ dependencies = [
 
 [project.optional-dependencies]
 rerank = ["sentence-transformers>=3.0.0"]
+exa = ["exa-py>=2.0.0"]
 dev = [
   "pytest>=8.0.0",
   "build>=1.2.0",

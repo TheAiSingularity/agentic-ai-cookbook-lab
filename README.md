@@ -471,6 +471,8 @@ Full list in `engine/core/pipeline.py` header. Most-common knobs:
 | `ENABLE_TRACE` | `1` | per-call observability + summary at CLI end |
 | `LOCAL_CORPUS_PATH` | unset | set to an index dir to augment search with your docs |
 | `MEMORY_DB_PATH` | `~/.agentic-research/memory.db` | SQLite trajectory store |
+| `SEARCH_PROVIDER` | `searxng` | swap the web-search backend; set to `exa` to use Exa AI-powered search (requires `pip install exa-py` + `EXA_API_KEY`) |
+| `EXA_API_KEY` | unset | API key for the Exa provider; only read when `SEARCH_PROVIDER=exa` |
 
 Full list: [`docs/architecture.md`](docs/architecture.md) env-vars section.
 
